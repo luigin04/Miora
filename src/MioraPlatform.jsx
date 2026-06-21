@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
+import { auth, db, ADMIN_EMAIL, ensureAuth } from "./firebase";
+import {
+  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
+} from "firebase/firestore";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 
-// ─── EmailJS Config (payment proof notifications to Layal) ──────────────────
+// ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
 const EMAILJS_TEMPLATE_ID = "template_4ebiexb";
 const EMAILJS_PUBLIC_KEY  = "waLfs1rIpsn4oaQVR";
 
-// ─── WhatsApp number for sending payment screenshots (Layal) ────────────────
-// Format: country code + number, no +, no spaces, no leading 0 (e.g. Jordan: 9627XXXXXXXX)
+// ─── WhatsApp number (shown in footer as a direct contact option) ───────────
 const LAYAL_WHATSAPP_NUMBER = "962788882168";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -22,7 +26,6 @@ const STORAGE_KEYS = {
   LANG: "miora_lang",
   REVIEWS: "miora_reviews",
   PROJECTS: "miora_projects",
-  PAYMENTS: "miora_payments",
 };
 
 const PRICING = [
@@ -85,7 +88,7 @@ const FONTS = [
 
 const FONT_LINK = "https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Londrina+Solid:wght@400;900&family=Playfair+Display:wght@400;600;700&family=Dancing+Script:wght@400;600;700&family=Pacifico&family=Amatic+SC:wght@400;700&family=Caveat:wght@400;600;700&family=Lobster&family=Comfortaa:wght@300;400;700&family=Markazi+Text:wght@400;500&display=swap";
 
-// ─── localStorage helpers (fixed: only serialisable data stored) ─────────────
+// ─── localStorage helpers (lang/reviews/projects — purely local, not Firestore) ──
 function loadFromStorage(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -100,13 +103,40 @@ function saveToStorage(key, value) {
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
-// Convert a File to base64 string so it can survive localStorage
+// Convert a File to base64 string so it can survive localStorage (used for editor images)
 function fileToBase64(file) {
   return new Promise((res, rej) => {
     const r = new FileReader();
     r.onload  = () => res(r.result);
     r.onerror = rej;
     r.readAsDataURL(file);
+  });
+}
+// Compress + resize an uploaded image file down to a small JPEG data URL so it fits
+// comfortably inside a single Firestore document (1MB limit) without needing paid Storage.
+function compressImageFile(file, maxWidth = 900, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("Image failed to load"));
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
   });
 }
 
@@ -137,28 +167,31 @@ const backBtnStyle = {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function MioraPlatform() {
   const [lang,            setLang]            = useState(() => loadFromStorage(STORAGE_KEYS.LANG,     "en"));
-  const [currentView,     setCurrentView]     = useState("home");
+  const [currentView,     setCurrentView]     = useState(() => window.location.hash === "#admin" ? "admin" : "home");
   const [selectedPackage, setSelectedPackage] = useState(null);
-  const [paymentProof,    setPaymentProof]    = useState(null);
-  const [paymentSubmitted,setPaymentSubmitted]= useState(false);
   const [reviewForm,      setReviewForm]      = useState({ name:"", rating:5, text:"" });
   const [reviews,         setReviews]         = useState(() => loadFromStorage(STORAGE_KEYS.REVIEWS,  DEFAULT_REVIEWS));
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [projects,        setProjects]        = useState(() => loadFromStorage(STORAGE_KEYS.PROJECTS, []));
-  const [payments,        setPayments]        = useState(() => loadFromStorage(STORAGE_KEYS.PAYMENTS, []));
   const [scrollY,         setScrollY]         = useState(0);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [saveToast,       setSaveToast]       = useState(null);
+  const [authUser,        setAuthUser]        = useState(null); // Firebase auth user (anonymous customer OR admin)
 
   const isRTL = lang === "ar";
   const dir   = isRTL ? "rtl" : "ltr";
   const t = (en, ar) => lang === "ar" ? ar : en;
 
-  // ── Persist to localStorage (only plain data — no File objects) ────────────
+  // ── Bootstrap Firebase auth (anonymous for everyone, until admin logs in) ──
+  useEffect(() => {
+    const unsub = ensureAuth((user) => setAuthUser(user));
+    return unsub;
+  }, []);
+
+  // ── Persist to localStorage (only plain data) ──────────────────────────────
   useEffect(() => saveToStorage(STORAGE_KEYS.LANG,     lang),     [lang]);
   useEffect(() => saveToStorage(STORAGE_KEYS.REVIEWS,  reviews),  [reviews]);
   useEffect(() => saveToStorage(STORAGE_KEYS.PROJECTS, projects), [projects]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.PAYMENTS, payments), [payments]);
 
   useEffect(() => {
     const h = () => setScrollY(window.scrollY);
@@ -179,11 +212,10 @@ export default function MioraPlatform() {
       title:     "",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      // pages: array of { id, elements: [{id,type,x,y,w,h,content,font,fontSize,color,rotation}] }
       pages:     [{ id: generateId(), background:"#ffffff", elements:[] }],
       status:    "draft",
     };
-    setProjects(prev => { const next = [p, ...prev]; return next; });
+    setProjects(prev => [p, ...prev]);
     setActiveProjectId(p.id);
     return p.id;
   }, []);
@@ -204,9 +236,11 @@ export default function MioraPlatform() {
     setCurrentView("my-projects");
   }, []);
 
-  const addPayment = useCallback((data) => setPayments(prev => [data, ...prev]), []);
-
   // ── Routing ────────────────────────────────────────────────────────────────
+  if (currentView === "admin") {
+    return <AdminView authUser={authUser} onExit={() => { window.location.hash = ""; setCurrentView("home"); }} t={t} lang={lang} isRTL={isRTL} />;
+  }
+
   if (currentView === "my-projects") {
     return <MyProjectsView projects={projects} onBack={() => setCurrentView("home")}
       onOpen={id => { const p = projects.find(x => x.id === id); if(p){ setActiveProjectId(id); setCurrentView("editor-"+p.mode); }}}
@@ -227,15 +261,13 @@ export default function MioraPlatform() {
   }
 
   if (currentView === "payment") {
-    return <PaymentView selectedPackage={selectedPackage} paymentProof={paymentProof}
-      setPaymentProof={setPaymentProof} paymentSubmitted={paymentSubmitted}
-      setPaymentSubmitted={setPaymentSubmitted} addPayment={addPayment}
-      onBack={() => { setCurrentView("home"); setPaymentSubmitted(false); setPaymentProof(null); }}
+    return <PaymentView selectedPackage={selectedPackage} authUser={authUser}
+      onBack={() => setCurrentView("home")}
       t={t} lang={lang} isRTL={isRTL} />;
   }
 
   if (currentView === "my-orders") {
-    return <MyOrdersView payments={payments} onBack={() => setCurrentView("home")} t={t} lang={lang} isRTL={isRTL} />;
+    return <MyOrdersView authUser={authUser} onBack={() => setCurrentView("home")} t={t} lang={lang} isRTL={isRTL} />;
   }
 
   // ── Home ───────────────────────────────────────────────────────────────────
@@ -451,9 +483,10 @@ export default function MioraPlatform() {
         <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:24, marginBottom:8, letterSpacing:2 }}>MIORA</div>
         <div style={{ fontSize:12, opacity:0.5, marginBottom:16 }}>by Layal</div>
         <div style={{ fontSize:13, opacity:0.4, marginBottom:8 }}>{t("Amman, Jordan","عمّان، الأردن")} · {t("All rights reserved","جميع الحقوق محفوظة")} © 2026</div>
-        <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:16 }}>
+        <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:16, flexWrap:"wrap" }}>
           <a href="https://instagram.com/miorabylayal" target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>Instagram</a>
           <a href={`https://wa.me/${LAYAL_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>WhatsApp</a>
+          <span onClick={() => { window.location.hash = "admin"; setCurrentView("admin"); }} style={{ color:PASTEL_PURPLE, fontSize:13, opacity:0.35, cursor:"pointer" }}>{t("Admin","الإدارة")}</span>
         </div>
         <div style={{ marginTop:16, fontSize:11, opacity:0.25 }}>{t("Projects auto-saved to this device","المشاريع محفوظة تلقائياً على هذا الجهاز")}</div>
       </footer>
@@ -569,30 +602,52 @@ function MyProjectsView({ projects, onBack, onOpen, onDelete, t, lang, isRTL }) 
   );
 }
 
-// ─── My Orders View ───────────────────────────────────────────────────────────
-function MyOrdersView({ payments, onBack, t, lang, isRTL }) {
+// ─── My Orders View (live status from Firestore) ─────────────────────────────
+function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
+  const [payments, setPayments] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+
+  useEffect(() => {
+    if (!authUser) return;
+    const q = query(collection(db, "payments"), where("customerUid", "==", authUser.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+      setPayments(list);
+      setLoading(false);
+    }, (err) => { console.error("Orders listener failed:", err); setLoading(false); });
+    return unsub;
+  }, [authUser]);
+
   const fmt = iso => { try { return new Date(iso).toLocaleDateString(lang==="ar"?"ar-JO":"en-US",{month:"short",day:"numeric",year:"numeric"}); } catch{return iso;} };
   const statusColors = { pending:GOLD_ACCENT, approved:"#27ae60", rejected:"#e74c3c" };
+  const statusLabel = s => s==="pending" ? t("Pending Review","قيد المراجعة") : s==="approved" ? t("Approved","تمت الموافقة") : t("Rejected","مرفوض");
+
   return (
     <div dir={isRTL?"rtl":"ltr"} style={{ ...pageShell, background:`linear-gradient(180deg,${SOFT_PINK}30,${WARM_WHITE})` }}>
       <link href={FONT_LINK} rel="stylesheet" />
       <button onClick={onBack} style={backBtnStyle}>← {t("Back","عودة")}</button>
       <div style={{ maxWidth:600, margin:"0 auto" }}>
         <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, textAlign:"center", marginBottom:32, color:DARK_PURPLE }}>{t("My Orders","طلباتي")}</h1>
-        {payments.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign:"center", padding:40, color:DARK_PURPLE, opacity:0.5, fontSize:14 }}>{t("Loading...","جاري التحميل...")}</div>
+        ) : payments.length === 0 ? (
           <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15` }}>
             <div style={{ fontSize:48, marginBottom:16 }}>🧾</div>
             <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No orders yet","لا توجد طلبات بعد")}</div>
           </div>
-        ) : payments.map((pay,i) => (
-          <div key={pay.id||i} style={{ background:"white", borderRadius:16, padding:"20px 24px", marginBottom:12, border:`1px solid ${PASTEL_PURPLE}15` }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-              <div style={{ fontWeight:700, fontSize:15, color:DARK_PURPLE }}>{pay.package?.pages||"—"} {t("pages","صفحة")}</div>
-              <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background:statusColors[pay.status]||GOLD_ACCENT }}>
-                {pay.status==="pending"?t("Pending Review","قيد المراجعة"):pay.status==="approved"?t("Approved","تمت الموافقة"):t("Rejected","مرفوض")}
+        ) : payments.map((pay) => (
+          <div key={pay.id} style={{ background:"white", borderRadius:16, padding:"20px 24px", marginBottom:12, border:`1px solid ${PASTEL_PURPLE}15`, display:"flex", gap:16, alignItems:"center" }}>
+            {pay.proofImage && <img src={pay.proofImage} alt="proof" style={{ width:56, height:56, objectFit:"cover", borderRadius:10, flexShrink:0 }} />}
+            <div style={{ flex:1 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                <div style={{ fontWeight:700, fontSize:15, color:DARK_PURPLE }}>{pay.package?.pages||"—"} {t("pages","صفحة")}</div>
+                <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background:statusColors[pay.status]||GOLD_ACCENT }}>
+                  {statusLabel(pay.status)}
+                </div>
               </div>
+              <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>{pay.package?.price||"—"} · {t("Submitted","أُرسل")}: {fmt(pay.createdAt)}</div>
             </div>
-            <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>{pay.package?.price||"—"} · {t("Submitted","أُرسل")}: {fmt(pay.date)}</div>
           </div>
         ))}
       </div>
@@ -600,64 +655,64 @@ function MyOrdersView({ payments, onBack, t, lang, isRTL }) {
   );
 }
 
-// ─── Payment View ─────────────────────────────────────────────────────────────
-function PaymentView({ selectedPackage, paymentProof, setPaymentProof, paymentSubmitted, setPaymentSubmitted, addPayment, onBack, t, lang, isRTL }) {
+// ─── Payment View (writes directly to Firestore, no Storage needed) ──────────
+function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
   const fileRef = useRef(null);
-  const [preview, setPreview] = useState(null);
-  const [sending, setSending] = useState(false);
+  const [file,      setFile]      = useState(null);
+  const [preview,   setPreview]   = useState(null);
+  const [sending,   setSending]   = useState(false);
   const [sendError, setSendError] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleFile = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setPaymentProof(file);
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f);
     setSendError(null);
     const reader = new FileReader();
     reader.onload = ev => setPreview(ev.target.result);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(f);
   };
 
   const handleSubmit = async () => {
-    if (!paymentProof || !preview) return;
+    if (!file || !authUser) return;
     setSending(true);
     setSendError(null);
 
-    const paymentRecord = { id:generateId(), package:selectedPackage, status:"pending", date:new Date().toISOString(), hasProof:true };
-
     try {
-      // Note: free EmailJS plan doesn't support attachments, so this just sends order details.
-      // The actual screenshot is sent separately via the WhatsApp button on the success screen.
-      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
-        package_name:     selectedPackage ? `${selectedPackage.pages} ${t("pages","صفحة")}` : "—",
-        package_price:    selectedPackage ? selectedPackage.price : "—",
-        submission_date:  new Date().toLocaleString(lang==="ar"?"ar-JO":"en-US"),
-      }, { publicKey: EMAILJS_PUBLIC_KEY });
+      // Compress the screenshot so it fits inside a Firestore document (no paid Storage needed)
+      const compressed = await compressImageFile(file, 900, 0.7);
 
-      addPayment(paymentRecord);
-      setPaymentSubmitted(true);
+      await addDoc(collection(db, "payments"), {
+        customerUid: authUser.uid,
+        package: selectedPackage,
+        status: "pending",
+        proofImage: compressed,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Best-effort instant email heads-up to Layal (no attachment — she reviews in the admin panel)
+      try {
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+          package_name:    selectedPackage ? `${selectedPackage.pages} ${t("pages","صفحة")}` : "—",
+          package_price:   selectedPackage ? selectedPackage.price : "—",
+          submission_date: new Date().toLocaleString(lang==="ar"?"ar-JO":"en-US"),
+        }, { publicKey: EMAILJS_PUBLIC_KEY });
+      } catch (emailErr) {
+        console.warn("Email notification failed (non-blocking):", emailErr);
+      }
+
+      setSubmitted(true);
     } catch (err) {
-      console.error("EmailJS send failed:", err);
-      // Still record the payment locally so it's not lost — but flag the email issue
-      addPayment(paymentRecord);
+      console.error("Firestore submission failed:", err);
       setSendError(t(
-        "Your proof was saved, but we couldn't notify Layal automatically by email. Please make sure to send the screenshot via WhatsApp below.",
-        "تم حفظ إثباتك، لكن لم نتمكن من إشعار ليال عبر البريد تلقائياً. يرجى التأكد من إرسال لقطة الشاشة عبر واتساب أدناه."
+        "Something went wrong saving your payment proof. Please check your connection and try again, or contact Layal directly via WhatsApp.",
+        "حدث خطأ أثناء حفظ إثبات الدفع. يرجى التحقق من اتصالك والمحاولة مرة أخرى، أو التواصل مع ليال مباشرة عبر واتساب."
       ));
-      setPaymentSubmitted(true);
     } finally {
       setSending(false);
     }
   };
-
-  // Build a WhatsApp deep link pre-filled with order details. The customer still has to
-  // manually attach the screenshot in WhatsApp — there's no way to auto-attach via a web link.
-  const whatsappMessage = encodeURIComponent(
-    t(
-      `Hi Layal! I just submitted a payment for a ${selectedPackage?.pages || ""} pages album (${selectedPackage?.price || ""}). Attaching my CliQ payment screenshot here — please confirm. Thank you! 💜`,
-      `مرحباً ليال! لقد أرسلت للتو دفعة لألبوم ${selectedPackage?.pages || ""} صفحة (${selectedPackage?.price || ""}). أرفق لقطة شاشة الدفع عبر كليك هنا — يرجى التأكيد. شكراً! 💜`
-    )
-  );
-  const whatsappLink = `https://wa.me/${LAYAL_WHATSAPP_NUMBER}?text=${whatsappMessage}`;
 
   return (
     <div dir={isRTL?"rtl":"ltr"} style={{ ...pageShell, background:`linear-gradient(180deg,${SOFT_PINK}40,${WARM_WHITE})` }}>
@@ -672,7 +727,7 @@ function PaymentView({ selectedPackage, paymentProof, setPaymentProof, paymentSu
             <div style={{ fontSize:24, fontWeight:700, color:GOLD_ACCENT, marginTop:4 }}>{selectedPackage.price}</div>
           </div>
         )}
-        {!paymentSubmitted ? (
+        {!submitted ? (
           <div style={{ background:"white", borderRadius:20, padding:32, border:`1px solid ${PASTEL_PURPLE}20` }}>
             <h3 style={{ fontSize:16, fontWeight:700, marginBottom:20, textAlign:"center", color:DARK_PURPLE }}>{t("Payment via CliQ","الدفع عبر كليك")}</h3>
             <div style={{ background:`${SOFT_PINK}30`, borderRadius:12, padding:20, marginBottom:24, border:`1px dashed ${PASTEL_PURPLE}40` }}>
@@ -697,36 +752,23 @@ function PaymentView({ selectedPackage, paymentProof, setPaymentProof, paymentSu
               )}
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display:"none" }} />
             </div>
-            <button onClick={handleSubmit} disabled={!paymentProof || sending} style={{ ...primaryBtnStyle, opacity:(paymentProof && !sending)?1:0.5, cursor:(paymentProof && !sending)?"pointer":"not-allowed" }}>
-              {sending ? "⏳ " + t("Sending...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
+            {sendError && (
+              <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginBottom:16 }}>{sendError}</p>
+            )}
+            <button onClick={handleSubmit} disabled={!file || sending || !authUser} style={{ ...primaryBtnStyle, opacity:(file && !sending && authUser)?1:0.5, cursor:(file && !sending && authUser)?"pointer":"not-allowed" }}>
+              {sending ? "⏳ " + t("Submitting...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
             </button>
           </div>
         ) : (
           <div style={{ background:"white", borderRadius:20, padding:40, textAlign:"center", border:`1px solid ${PASTEL_PURPLE}20` }}>
             <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
             <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:DARK_PURPLE, marginBottom:12 }}>
-              {t("Order Details Sent!","تم إرسال تفاصيل الطلب!")}
+              {t("Payment Proof Submitted!","تم إرسال إثبات الدفع!")}
             </h3>
-            {sendError && (
-              <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginBottom:16 }}>{sendError}</p>
-            )}
-            <div style={{ background:"#e9fbf0", border:"1px solid #b8e8c8", borderRadius:14, padding:20, marginTop:8, textAlign:isRTL?"right":"left" }}>
-              <div style={{ fontSize:14, fontWeight:700, color:"#1e7d4a", marginBottom:6 }}>
-                {t("One Last Step:","خطوة أخيرة:")}
-              </div>
-              <p style={{ fontSize:13, color:"#2c5f43", lineHeight:1.6, marginBottom:16 }}>
-                {t(
-                  "Please send your payment screenshot to Layal via WhatsApp so she can verify it. Tap the button below — it'll open WhatsApp with a message ready, just attach the screenshot.",
-                  "يرجى إرسال لقطة شاشة الدفع إلى ليال عبر واتساب للتحقق منها. اضغط الزر أدناه — سيفتح واتساب مع رسالة جاهزة، فقط أرفق لقطة الشاشة."
-                )}
-              </p>
-              <a href={whatsappLink} target="_blank" rel="noopener noreferrer" style={{
-                display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-                background:"#25D366", color:"white", padding:"14px", borderRadius:14,
-                fontSize:14, fontWeight:700, textDecoration:"none", fontFamily:"'Quicksand',sans-serif" }}>
-                💬 {t("Send Screenshot via WhatsApp","أرسل لقطة الشاشة عبر واتساب")}
-              </a>
-            </div>
+            <p style={{ fontSize:14, color:DARK_PURPLE, opacity:0.6, lineHeight:1.6 }}>
+              {t("Layal has been notified and will review your payment shortly. Check \"My Orders\" anytime to see the live status.",
+                 "تم إشعار ليال وستراجع دفعتك قريباً. تحقق من \"طلباتي\" في أي وقت لرؤية الحالة المباشرة.")}
+            </p>
             <div style={{ marginTop:20, padding:16, borderRadius:12, background:`${PASTEL_PURPLE}10`, fontSize:13, color:DEEP_PURPLE }}>
               {t("Status:","الحالة:")} <strong style={{ color:GOLD_ACCENT }}>{t("Pending Review","قيد المراجعة")}</strong>
             </div>
@@ -737,8 +779,187 @@ function PaymentView({ selectedPackage, paymentProof, setPaymentProof, paymentSu
   );
 }
 
+// ─── Admin View (Layal's dashboard) ──────────────────────────────────────────
+function AdminView({ authUser, onExit, t, lang, isRTL }) {
+  const [email,       setEmail]       = useState("");
+  const [password,    setPassword]    = useState("");
+  const [loginError,  setLoginError]  = useState(null);
+  const [loggingIn,   setLoggingIn]   = useState(false);
+  const [payments,    setPayments]    = useState([]);
+  const [loadingPays, setLoadingPays] = useState(true);
+  const [filter,       setFilter]     = useState("pending"); // pending|approved|rejected|all
+
+  const isAdmin = authUser && authUser.email === ADMIN_EMAIL;
+
+  useEffect(() => {
+    if (!isAdmin) { setLoadingPays(false); return; }
+    const q = query(collection(db, "payments"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingPays(false);
+    }, (err) => { console.error("Admin listener failed:", err); setLoadingPays(false); });
+    return unsub;
+  }, [isAdmin]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoggingIn(true);
+    setLoginError(null);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err) {
+      console.error("Admin login failed:", err);
+      setLoginError(t("Incorrect email or password.","البريد الإلكتروني أو كلمة المرور غير صحيحة."));
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    onExit();
+  };
+
+  const setStatus = async (paymentId, status) => {
+    try {
+      await updateDoc(doc(db, "payments", paymentId), { status });
+    } catch (err) {
+      console.error("Failed to update status:", err);
+      alert(t("Failed to update — please check your connection and try again.","فشل التحديث — يرجى التحقق من اتصالك والمحاولة مرة أخرى."));
+    }
+  };
+
+  const fmt = iso => { try { return new Date(iso).toLocaleString(lang==="ar"?"ar-JO":"en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}); } catch{return iso;} };
+  const statusColors = { pending:GOLD_ACCENT, approved:"#27ae60", rejected:"#e74c3c" };
+  const statusLabel = s => s==="pending" ? t("Pending","قيد الانتظار") : s==="approved" ? t("Approved","تمت الموافقة") : t("Rejected","مرفوض");
+
+  const visiblePayments = filter === "all" ? payments : payments.filter(p => p.status === filter);
+  const counts = {
+    pending:  payments.filter(p=>p.status==="pending").length,
+    approved: payments.filter(p=>p.status==="approved").length,
+    rejected: payments.filter(p=>p.status==="rejected").length,
+    all:      payments.length,
+  };
+
+  // ── Not logged in as admin → show login form ──────────────────────────────
+  if (!isAdmin) {
+    return (
+      <div dir={isRTL?"rtl":"ltr"} style={{ ...pageShell, background:`linear-gradient(180deg,${SOFT_PINK}40,${WARM_WHITE})`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <link href={FONT_LINK} rel="stylesheet" />
+        <div style={{ maxWidth:380, width:"100%", background:"white", borderRadius:20, padding:36, border:`1px solid ${PASTEL_PURPLE}20`, boxShadow:`0 8px 32px ${PASTEL_PURPLE}15` }}>
+          <div style={{ textAlign:"center", marginBottom:24 }}>
+            <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:28, color:DEEP_PURPLE, letterSpacing:2 }}>MIORA</div>
+            <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, marginTop:4 }}>{t("Admin Login","تسجيل دخول الإدارة")}</div>
+          </div>
+          <form onSubmit={handleLogin}>
+            <input type="email" required placeholder={t("Email","البريد الإلكتروني")} value={email}
+              onChange={e=>setEmail(e.target.value)} style={inputStyle} dir="ltr" />
+            <input type="password" required placeholder={t("Password","كلمة المرور")} value={password}
+              onChange={e=>setPassword(e.target.value)} style={inputStyle} dir="ltr" />
+            {loginError && <p style={{ fontSize:13, color:"#e74c3c", marginBottom:16, textAlign:"center" }}>{loginError}</p>}
+            <button type="submit" disabled={loggingIn} style={{ ...primaryBtnStyle, opacity:loggingIn?0.6:1 }}>
+              {loggingIn ? t("Logging in...","جاري الدخول...") : t("Log In","دخول")}
+            </button>
+          </form>
+          <button onClick={onExit} style={{ width:"100%", marginTop:12, background:"none", border:"none", color:DARK_PURPLE, opacity:0.5, fontSize:13, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+            ← {t("Back to site","العودة للموقع")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Admin dashboard ─────────────────────────────────────────────────────
+  return (
+    <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(180deg,${SOFT_PINK}20,${WARM_WHITE})`, fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
+      <link href={FONT_LINK} rel="stylesheet" />
+      <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`, padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12 }}>
+        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:22, color:DEEP_PURPLE, letterSpacing:1 }}>
+          MIORA <span style={{ fontFamily:"'Quicksand'", fontSize:12, fontWeight:400, opacity:0.5 }}>{t("Admin","الإدارة")}</span>
+        </div>
+        <div style={{ display:"flex", gap:12, alignItems:"center" }}>
+          <span style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>{ADMIN_EMAIL}</span>
+          <button onClick={handleLogout} style={{ background:`${PASTEL_PURPLE}20`, border:`1px solid ${PASTEL_PURPLE}40`, borderRadius:10, padding:"8px 16px", fontSize:12, fontWeight:700, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+            {t("Log Out","تسجيل خروج")}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:800, margin:"0 auto", padding:24 }}>
+        <div style={{ display:"flex", gap:8, marginBottom:24, flexWrap:"wrap" }}>
+          {["pending","approved","rejected","all"].map(f => (
+            <button key={f} onClick={() => setFilter(f)} style={{
+              padding:"8px 16px", borderRadius:20, fontSize:13, fontWeight:700, cursor:"pointer",
+              border: filter===f ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}30`,
+              background: filter===f ? `${PASTEL_PURPLE}20` : "white",
+              color: filter===f ? DEEP_PURPLE : DARK_PURPLE, fontFamily:"'Quicksand',sans-serif" }}>
+              {f==="pending"?t("Pending","قيد الانتظار"):f==="approved"?t("Approved","تمت الموافقة"):f==="rejected"?t("Rejected","مرفوض"):t("All","الكل")} ({counts[f]})
+            </button>
+          ))}
+        </div>
+
+        {loadingPays ? (
+          <div style={{ textAlign:"center", padding:60, color:DARK_PURPLE, opacity:0.5 }}>{t("Loading submissions...","جاري تحميل الطلبات...")}</div>
+        ) : visiblePayments.length === 0 ? (
+          <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15` }}>
+            <div style={{ fontSize:48, marginBottom:16 }}>📭</div>
+            <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No submissions here","لا توجد طلبات هنا")}</div>
+          </div>
+        ) : (
+          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+            {visiblePayments.map(pay => (
+              <div key={pay.id} style={{ background:"white", borderRadius:16, padding:20, border:`1px solid ${PASTEL_PURPLE}15`, display:"flex", gap:16, flexWrap:"wrap" }}>
+                {pay.proofImage ? (
+                  <img src={pay.proofImage} alt="proof" style={{ width:140, height:140, objectFit:"cover", borderRadius:12, flexShrink:0, cursor:"pointer" }}
+                    onClick={() => window.open(pay.proofImage, "_blank")} />
+                ) : (
+                  <div style={{ width:140, height:140, borderRadius:12, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, flexShrink:0 }}>📷</div>
+                )}
+                <div style={{ flex:1, minWidth:200 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:8 }}>
+                    <div style={{ fontWeight:700, fontSize:16, color:DARK_PURPLE }}>{pay.package?.pages||"—"} {t("pages","صفحة")} — {pay.package?.price||"—"}</div>
+                    <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background:statusColors[pay.status]||GOLD_ACCENT }}>
+                      {statusLabel(pay.status)}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5, marginBottom:14 }}>
+                    {t("Submitted","أُرسل")}: {fmt(pay.createdAt)}
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <button onClick={() => setStatus(pay.id, "approved")} disabled={pay.status==="approved"} style={{
+                      flex:1, padding:"10px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
+                      background: pay.status==="approved" ? "#d4f4dd" : "#27ae60",
+                      color: pay.status==="approved" ? "#27ae60" : "white",
+                      cursor: pay.status==="approved" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                      ✓ {t("Approve","موافقة")}
+                    </button>
+                    <button onClick={() => setStatus(pay.id, "rejected")} disabled={pay.status==="rejected"} style={{
+                      flex:1, padding:"10px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
+                      background: pay.status==="rejected" ? "#fbd9d6" : "#e74c3c",
+                      color: pay.status==="rejected" ? "#e74c3c" : "white",
+                      cursor: pay.status==="rejected" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                      ✕ {t("Reject","رفض")}
+                    </button>
+                    {pay.status !== "pending" && (
+                      <button onClick={() => setStatus(pay.id, "pending")} style={{
+                        padding:"10px 14px", borderRadius:10, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:13, fontWeight:600,
+                        background:"white", color:DARK_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                        ↺
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Book Editor View ─────────────────────────────────────────────────────────
-// The real canvas editor: images, stickers, text, multi-page, auto-save
+// The full canvas editor: images, stickers, text, multi-page, auto-save
 function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   // ── Local state (mirrors project, synced to parent on save) ──────────────
   const [pages,       setPages]       = useState(() => project.pages && project.pages.length ? project.pages : [{ id:generateId(), background:"#ffffff", elements:[] }]);
@@ -892,16 +1113,12 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
     setAiRunning(true);
     await new Promise(r => setTimeout(r, 1800)); // simulate processing
 
-    // Distribute images across pages, 1-3 per page with smart layouts
     const layouts = [
-      // 1 image — full page
       (imgs, pw, ph) => [{ ...imgs[0], x:20, y:20, w:pw-40, h:ph-40 }],
-      // 2 images — side by side
       (imgs, pw, ph) => [
         { ...imgs[0], x:10, y:20, w:pw/2-15, h:ph-60 },
         { ...imgs[1], x:pw/2+5, y:20, w:pw/2-15, h:ph-60 },
       ],
-      // 3 images — 1 top + 2 bottom
       (imgs, pw, ph) => [
         { ...imgs[0], x:10, y:10, w:pw-20, h:ph/2-15 },
         { ...imgs[1], x:10, y:ph/2+5, w:pw/2-15, h:ph/2-15 },
@@ -924,7 +1141,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
     const newPages = chunks.map((chunk, ci) => {
       const layoutFn = layouts[Math.min(chunk.length-1, layouts.length-1)];
       const placed   = layoutFn(chunk, PW, PH);
-      // add 2 random stickers per page
       const stickerEls = stickers.slice(0,2).map((s,si) => ({
         id:generateId(), type:"sticker", content:s,
         x:10+si*(PW-70), y:si%2===0?10:PH-80, w:55, h:55, rotation:(Math.random()*30)-15,
@@ -1173,18 +1389,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
           {/* Toolbar */}
           <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}10`, padding:"8px 16px",
             display:"flex", gap:8, alignItems:"center", width:"100%", flexWrap:"wrap" }}>
-            {/* Upload images */}
             <ToolBtn icon="📷" label={t("Add Photo","أضف صورة")} onClick={() => fileRef.current?.click()} />
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display:"none" }} />
-            {/* Text */}
             <ToolBtn icon="T" label={t("Add Text","أضف نص")} onClick={addText} active={tool==="text"} />
-            {/* Stickers shortcut */}
             <ToolBtn icon="🎨" label={t("Stickers","ملصقات")} onClick={() => setLeftTab("stickers")} />
 
-            {/* Separator */}
             <div style={{ width:1, height:28, background:`${PASTEL_PURPLE}30`, margin:"0 4px" }} />
 
-            {/* Selected element controls */}
             {selEl && (
               <>
                 {selEl.type==="text" && (
@@ -1210,7 +1421,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
               </>
             )}
 
-            {/* AI button */}
             {mode==="ai" && (
               <button onClick={runAI} disabled={aiRunning} style={{
                 marginLeft:"auto", padding:"6px 16px", borderRadius:20, fontSize:12, fontWeight:700,
@@ -1222,7 +1432,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
             )}
           </div>
 
-          {/* AI done banner */}
           {aiDone && (
             <div style={{ width:"100%", background:`linear-gradient(90deg,${DEEP_PURPLE},#6c3483)`, color:"white",
               padding:"10px 20px", fontSize:13, fontWeight:600, textAlign:"center" }}>
@@ -1239,7 +1448,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
                 boxShadow:"0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)", cursor:"default" }}
               data-canvas="true">
 
-              {/* Render elements */}
               {(page.elements||[]).map(el => (
                 <div key={el.id}
                   onMouseDown={e => onMouseDownEl(e, el.id)}
@@ -1281,7 +1489,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
                     )
                   )}
 
-                  {/* Resize handle */}
                   {selected===el.id && (
                     <div onMouseDown={e => onResizeMouseDown(e, el.id)}
                       style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%",
@@ -1290,7 +1497,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
                 </div>
               ))}
 
-              {/* Empty state */}
               {(page.elements||[]).length === 0 && (
                 <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
                   alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
