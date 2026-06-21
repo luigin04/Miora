@@ -452,8 +452,8 @@ export default function MioraPlatform() {
         <div style={{ fontSize:12, opacity:0.5, marginBottom:16 }}>by Layal</div>
         <div style={{ fontSize:13, opacity:0.4, marginBottom:8 }}>{t("Amman, Jordan","عمّان، الأردن")} · {t("All rights reserved","جميع الحقوق محفوظة")} © 2026</div>
         <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:16 }}>
-          <a href="#" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>Instagram</a>
-          <a href="#" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>WhatsApp</a>
+          <a href="https://instagram.com/miorabylayal" target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>Instagram</a>
+          <a href={`https://wa.me/${LAYAL_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>WhatsApp</a>
         </div>
         <div style={{ marginTop:16, fontSize:11, opacity:0.25 }}>{t("Projects auto-saved to this device","المشاريع محفوظة تلقائياً على هذا الجهاز")}</div>
       </footer>
@@ -746,7 +746,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   const [title,       setTitle]       = useState(project.title || "");
   const [occasion,    setOccasion]    = useState(project.occasion || "General");
   const [selected,    setSelected]    = useState(null);   // selected element id
-  const [tool,        setTool]        = useState("select"); // select|text|sticker
+  const [tool]                        = useState("select"); // select|text|sticker
   const [stickerPack, setStickerPack] = useState("hearts");
   const [aiRunning,   setAiRunning]   = useState(false);
   const [aiDone,      setAiDone]      = useState(false);
