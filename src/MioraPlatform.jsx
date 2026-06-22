@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
 import { auth, db, ADMIN_EMAIL, ensureAuth } from "./firebase";
 import {
-  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
+  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy, getDocs,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
@@ -140,7 +142,40 @@ function compressImageFile(file, maxWidth = 900, quality = 0.7) {
   });
 }
 
-// ─── Shared style constants ───────────────────────────────────────────────────
+// ─── PDF Export ───────────────────────────────────────────────────────────────
+// Renders each album page div to canvas via html2canvas, then packs them all
+// into a single jsPDF document at print-quality resolution (scale: 2).
+// Returns the jsPDF instance so the caller can save() or open it.
+async function exportAlbumToPDF(pageRefs, title = "Miora Album") {
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pdfWidth  = pdf.internal.pageSize.getWidth();
+  const pdfHeight = pdf.internal.pageSize.getHeight();
+
+  for (let i = 0; i < pageRefs.length; i++) {
+    const el = pageRefs[i];
+    if (!el) continue;
+
+    const canvas = await html2canvas(el, {
+      scale: 2,                  // 2x = crisp at print resolution
+      useCORS: true,
+      backgroundColor: el.style.background || "#ffffff",
+      logging: false,
+    });
+
+    const imgData   = canvas.toDataURL("image/jpeg", 0.92);
+    const imgWidth  = pdfWidth;
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+
+    if (i > 0) pdf.addPage();
+
+    // Center vertically if page is shorter than A4
+    const yOffset = imgHeight < pdfHeight ? (pdfHeight - imgHeight) / 2 : 0;
+    pdf.addImage(imgData, "JPEG", 0, yOffset, imgWidth, imgHeight);
+  }
+
+  pdf.setProperties({ title, creator: "Miora by Layal" });
+  return pdf;
+}
 const inputStyle = {
   width:"100%", padding:"12px 16px", borderRadius:12, fontSize:14,
   border:`1px solid ${PASTEL_PURPLE}30`, background:`${SOFT_PINK}15`,
@@ -170,7 +205,7 @@ export default function MioraPlatform() {
   const [currentView,     setCurrentView]     = useState(() => window.location.hash === "#admin" ? "admin" : "home");
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [reviewForm,      setReviewForm]      = useState({ name:"", rating:5, text:"" });
-  const [reviews,         setReviews]         = useState(() => loadFromStorage(STORAGE_KEYS.REVIEWS,  DEFAULT_REVIEWS));
+  const [reviews,         setReviews]         = useState(DEFAULT_REVIEWS); // seeded with defaults, overwritten by Firestore
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [projects,        setProjects]        = useState(() => loadFromStorage(STORAGE_KEYS.PROJECTS, []));
   const [scrollY,         setScrollY]         = useState(0);
@@ -188,9 +223,20 @@ export default function MioraPlatform() {
     return unsub;
   }, []);
 
+  // ── Load reviews from Firestore in real time (shared across all visitors) ──
+  useEffect(() => {
+    const q = query(collection(db, "reviews"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      if (snap.empty) return; // keep DEFAULT_REVIEWS showing until real ones exist
+      setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Reviews listener failed, using local fallback:", err);
+    });
+    return unsub;
+  }, []);
+
   // ── Persist to localStorage (only plain data) ──────────────────────────────
   useEffect(() => saveToStorage(STORAGE_KEYS.LANG,     lang),     [lang]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.REVIEWS,  reviews),  [reviews]);
   useEffect(() => saveToStorage(STORAGE_KEYS.PROJECTS, projects), [projects]);
 
   useEffect(() => {
@@ -458,13 +504,26 @@ export default function MioraPlatform() {
             <textarea placeholder={t("Share your experience...","شاركنا تجربتك...")}
               value={reviewForm.text} onChange={e => setReviewForm({...reviewForm,text:e.target.value})}
               rows={3} style={{ ...inputStyle, resize:"vertical", minHeight:80 }} dir={dir} />
-            <button onClick={() => {
+            <button onClick={async () => {
               if (reviewForm.name && reviewForm.text) {
-                setReviews(prev => [{ id:generateId(), name:reviewForm.name, rating:reviewForm.rating,
-                  text:reviewForm.text, nameAr:reviewForm.name, textAr:reviewForm.text,
-                  date:new Date().toISOString().split("T")[0] }, ...prev]);
-                setReviewSubmitted(true);
-                setReviewForm({ name:"", rating:5, text:"" });
+                try {
+                  await addDoc(collection(db, "reviews"), {
+                    name: reviewForm.name,
+                    rating: reviewForm.rating,
+                    text: reviewForm.text,
+                    createdAt: new Date().toISOString(),
+                    date: new Date().toISOString().split("T")[0],
+                  });
+                  setReviewSubmitted(true);
+                  setReviewForm({ name:"", rating:5, text:"" });
+                } catch (err) {
+                  console.error("Review save failed:", err);
+                  // Fallback: show locally even if Firestore fails
+                  setReviews(prev => [{ id:generateId(), name:reviewForm.name, rating:reviewForm.rating,
+                    text:reviewForm.text, date:new Date().toISOString().split("T")[0] }, ...prev]);
+                  setReviewSubmitted(true);
+                  setReviewForm({ name:"", rating:5, text:"" });
+                }
               }
             }} style={primaryBtnStyle}>{t("Submit Review","أرسل التقييم")}</button>
           </div>
@@ -975,6 +1034,9 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   const [lastSaved,   setLastSaved]   = useState(null);
   const [dragging,    setDragging]    = useState(null);   // { elId, startX, startY, origX, origY }
   const [resizing,    setResizing]    = useState(null);
+  const [exporting,   setExporting]   = useState(false);  // PDF export in progress
+  const [exported,    setExported]    = useState(false);  // PDF just downloaded
+  const pageExportRefs = useRef([]);  // array of DOM refs for each page, used by html2canvas
   const canvasRef = useRef(null);
   const fileRef   = useRef(null);
   const autoSaveTimer = useRef(null);
@@ -1004,6 +1066,32 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
     onUpdate({ pages, title, occasion });
     setLastSaved(new Date());
   };
+
+  const handleExportPDF = async () => {
+    setExporting(true);
+    setExported(false);
+    try {
+      const refs = pageExportRefs.current.filter(Boolean);
+      if (refs.length === 0) throw new Error("No page refs found");
+      const pdf = await exportAlbumToPDF(refs, title || "Miora Album");
+      const fileName = `${(title || "Miora-Album").replace(/\s+/g,"-")}-${Date.now()}.pdf`;
+      pdf.save(fileName);
+      setExported(true);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      alert(t("PDF export failed. Please try again.","فشل تصدير PDF. يرجى المحاولة مرة أخرى."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const whatsappPDFMessage = encodeURIComponent(
+    t(
+      `Hi Layal! I've finished designing my album "${title || "My Album"}" (${pages.length} pages). I'm attaching the PDF below for printing. Please confirm receipt! 💜`,
+      `مرحباً ليال! لقد انتهيت من تصميم ألبومي "${title || "ألبومي"}" (${pages.length} صفحة). أرفق ملف PDF أدناه للطباعة. يرجى تأكيد الاستلام! 💜`
+    )
+  );
+  const whatsappPDFLink = `https://wa.me/${LAYAL_WHATSAPP_NUMBER}?text=${whatsappPDFMessage}`;
 
   const fmtTime = d => d ? d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
 
@@ -1231,6 +1319,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
             borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
             💾 {t("Save","احفظ")}
           </button>
+          <button onClick={handleExportPDF} disabled={exporting} style={{
+            background: exporting ? "#ccc" : `linear-gradient(135deg,${DEEP_PURPLE},${DARK_PURPLE})`,
+            border:"none", borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700,
+            color:"white", cursor:exporting?"not-allowed":"pointer", fontFamily:"'Quicksand',sans-serif",
+            display:"flex", alignItems:"center", gap:4 }}>
+            {exporting ? "⏳ " + t("Exporting...","جاري التصدير...") : "📄 " + t("Export PDF","تصدير PDF")}
+          </button>
         </div>
       </div>
 
@@ -1440,6 +1535,20 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
             </div>
           )}
 
+          {exported && (
+            <div style={{ width:"100%", background:"linear-gradient(90deg,#27ae60,#1e8449)", color:"white", padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
+              <span style={{ fontSize:13, fontWeight:600 }}>
+                ✅ {t("PDF downloaded! Now send it to Layal for printing.","تم تنزيل PDF! أرسله الآن إلى ليال للطباعة.")}
+              </span>
+              <a href={whatsappPDFLink} target="_blank" rel="noopener noreferrer" style={{
+                background:"white", color:"#27ae60", padding:"6px 14px", borderRadius:20, fontSize:12,
+                fontWeight:700, textDecoration:"none", display:"flex", alignItems:"center", gap:4 }}>
+                💬 {t("Send to Layal via WhatsApp","أرسل إلى ليال عبر واتساب")}
+              </a>
+              <button onClick={() => setExported(false)} style={{ background:"rgba(255,255,255,0.2)", border:"none", borderRadius:6, padding:"2px 10px", color:"white", cursor:"pointer", fontSize:11 }}>✕</button>
+            </div>
+          )}
+
           {/* Canvas */}
           <div style={{ padding:32, display:"flex", justifyContent:"center" }}>
             <div ref={canvasRef} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
@@ -1526,6 +1635,36 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
               fontSize:13, color:DEEP_PURPLE, fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>
               {t("Next","التالي")} ›
             </button>
+          </div>
+
+          {/* ── Hidden off-screen pages for PDF export (html2canvas captures these) ── */}
+          <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
+            {pages.map((pg, i) => (
+              <div key={pg.id} ref={el => { pageExportRefs.current[i] = el; }}
+                style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
+                {(pg.elements||[]).map(el => (
+                  <div key={el.id} style={{
+                    position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                    transform:`rotate(${el.rotation||0}deg)` }}>
+                    {el.type==="image" && (
+                      <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />
+                    )}
+                    {el.type==="sticker" && (
+                      <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                        fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>
+                    )}
+                    {el.type==="text" && (
+                      <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                        fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                        color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                        textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>
+                        {el.content}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
 
