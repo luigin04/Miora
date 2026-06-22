@@ -1041,7 +1041,20 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   const fileRef   = useRef(null);
   const autoSaveTimer = useRef(null);
 
-  const page = pages[currentPage] || pages[0];
+  // ── Spread view: always show 2 pages side by side ────────────────────────
+  // currentPage always points to the LEFT page of the current spread.
+  // spreadIndex = which spread we're on (0 = cover spread, 1 = first interior spread, etc.)
+  // activeSide = "left" | "right" — which page is currently being edited
+  const [activeSide, setActiveSide] = useState("right"); // default to front cover on load
+
+  const spreadIndex   = Math.floor(currentPage / 2);
+  const leftPageIdx   = spreadIndex * 2;
+  const rightPageIdx  = spreadIndex * 2 + 1;
+  const leftPage      = pages[leftPageIdx]  || { id:"empty-l", background:"#ffffff", elements:[] };
+  const rightPage     = pages[rightPageIdx] || { id:"empty-r", background:"#ffffff", elements:[] };
+  const activePageIdx = activeSide === "left" ? leftPageIdx : rightPageIdx;
+  const page          = activeSide === "left" ? leftPage : rightPage;
+  const totalSpreads  = Math.ceil(pages.length / 2);
 
   // ── Auto-save every 30 s ────────────────────────────────────────────────
   useEffect(() => {
@@ -1097,17 +1110,26 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
 
   // ── Page helpers ─────────────────────────────────────────────────────────
   const addPage = () => {
-    const np = { id:generateId(), background:"#ffffff", elements:[] };
-    const next = [...pages, np];
+    // Always add 2 pages to maintain even spread pairing
+    const np1 = { id:generateId(), background:"#ffffff", elements:[] };
+    const np2 = { id:generateId(), background:"#ffffff", elements:[] };
+    const next = [...pages, np1, np2];
     setPages(next);
-    setCurrentPage(next.length - 1);
+    setCurrentPage(next.length - 2); // jump to new spread's left page
+    setActiveSide("left");
     setSelected(null);
   };
   const removePage = idx => {
-    if (pages.length <= 1) return;
-    const next = pages.filter((_,i) => i !== idx);
+    // Remove the entire spread (both pages) if not the cover spread
+    const spreadIdx = Math.floor(idx / 2);
+    if (spreadIdx === 0) return; // never remove cover spread
+    const leftIdx  = spreadIdx * 2;
+    const rightIdx = spreadIdx * 2 + 1;
+    const next = pages.filter((_,i) => i !== leftIdx && i !== rightIdx);
     setPages(next);
-    setCurrentPage(Math.min(currentPage, next.length-1));
+    const newSpread = Math.min(spreadIdx - 1, Math.ceil(next.length / 2) - 1);
+    setCurrentPage(newSpread * 2);
+    setActiveSide("left");
     setSelected(null);
   };
   const updatePage = (idx, patch) => setPages(prev => prev.map((p,i) => i===idx ? {...p,...patch} : p));
@@ -1116,27 +1138,27 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   // ── Element helpers ──────────────────────────────────────────────────────
   const addElement = el => {
     const next = [...(page.elements||[]), el];
-    updateElements(currentPage, next);
+    updateElements(activePageIdx, next);
     setSelected(el.id);
   };
   const updateElement = (id, patch) => {
     const next = (page.elements||[]).map(el => el.id===id ? {...el,...patch} : el);
-    updateElements(currentPage, next);
+    updateElements(activePageIdx, next);
   };
   const removeElement = id => {
     const next = (page.elements||[]).filter(el => el.id!==id);
-    updateElements(currentPage, next);
+    updateElements(activePageIdx, next);
     setSelected(null);
   };
   const bringForward = id => {
     const els = [...(page.elements||[])];
     const i = els.findIndex(e=>e.id===id);
-    if (i < els.length-1) { [els[i],els[i+1]]=[els[i+1],els[i]]; updateElements(currentPage,els); }
+    if (i < els.length-1) { [els[i],els[i+1]]=[els[i+1],els[i]]; updateElements(activePageIdx,els); }
   };
   const sendBackward = id => {
     const els = [...(page.elements||[])];
     const i = els.findIndex(e=>e.id===id);
-    if (i > 0) { [els[i],els[i-1]]=[els[i-1],els[i]]; updateElements(currentPage,els); }
+    if (i > 0) { [els[i],els[i-1]]=[els[i-1],els[i]]; updateElements(activePageIdx,els); }
   };
 
   // ── Image upload ─────────────────────────────────────────────────────────
@@ -1275,7 +1297,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   const applyTemplate = tpl => {
     const PW=400, PH=520;
     const elements = tpl.layout(PW,PH).map(el => ({ ...el, id:generateId(), rotation:el.rotation||0, w:el.w||120, h:el.h||40 }));
-    updatePage(currentPage, { background:tpl.bg, elements });
+    updatePage(activePageIdx, { background:tpl.bg, elements });
     setSelected(null);
   };
 
@@ -1369,26 +1391,38 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
                     {OCCASIONS.map(o => <option key={o.name} value={o.name}>{t(o.name,o.nameAr)} {o.emoji}</option>)}
                   </select>
                 </div>
-                <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, opacity:0.5, marginBottom:8 }}>{t("Pages","الصفحات")} ({pages.length})</div>
-                {pages.map((pg,i) => (
-                  <div key={pg.id} onClick={() => { setCurrentPage(i); setSelected(null); }} style={{
-                    display:"flex", justifyContent:"space-between", alignItems:"center",
-                    padding:"8px 10px", borderRadius:8, cursor:"pointer", marginBottom:4,
-                    background: i===currentPage ? `${PASTEL_PURPLE}25` : "transparent",
-                    border: i===currentPage ? `1px solid ${PASTEL_PURPLE}40` : "1px solid transparent" }}>
-                    <span style={{ fontSize:12, fontWeight:i===currentPage?700:400, color:DARK_PURPLE }}>{t("Page","صفحة")} {i+1}</span>
-                    <div style={{ display:"flex", gap:4 }}>
-                      <span style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4 }}>{pg.elements?.length||0}el</span>
-                      {pages.length>1 && (
-                        <span onClick={ev=>{ev.stopPropagation();removePage(i);}} style={{ fontSize:14, cursor:"pointer", color:"#ccc" }}
-                          onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#ccc"}>×</span>
-                      )}
+                <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, opacity:0.5, marginBottom:8 }}>{t("Spreads","الوجوه")} ({totalSpreads})</div>
+                {Array.from({length: totalSpreads}).map((_,si) => {
+                  const lIdx = si*2, rIdx = si*2+1;
+                  const isCover = si===0;
+                  const isActive = si===spreadIndex;
+                  return (
+                    <div key={si} onClick={() => { setCurrentPage(lIdx); setActiveSide("left"); setSelected(null); }} style={{
+                      display:"flex", justifyContent:"space-between", alignItems:"center",
+                      padding:"8px 10px", borderRadius:8, cursor:"pointer", marginBottom:4,
+                      background: isActive ? `${PASTEL_PURPLE}25` : "transparent",
+                      border: isActive ? `1px solid ${PASTEL_PURPLE}40` : "1px solid transparent" }}>
+                      <div>
+                        <div style={{ fontSize:12, fontWeight:isActive?700:400, color:DARK_PURPLE }}>
+                          {isCover ? t("Cover","الغلاف") : `${t("Spread","وجه")} ${si}`}
+                        </div>
+                        <div style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4 }}>
+                          {isCover ? t("Back + Front","خلفي + أمامي") : `${t("pp","ص")} ${lIdx}–${rIdx}`}
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                        <span style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4 }}>{((pages[lIdx]?.elements||[]).length + (pages[rIdx]?.elements||[]).length)}el</span>
+                        {si > 0 && (
+                          <span onClick={ev=>{ev.stopPropagation();removePage(lIdx);}} style={{ fontSize:14, cursor:"pointer", color:"#ccc" }}
+                            onMouseEnter={e=>e.target.style.color="#e74c3c"} onMouseLeave={e=>e.target.style.color="#ccc"}>×</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <button onClick={addPage} style={{ width:"100%", padding:"8px", borderRadius:10, fontSize:12, fontWeight:600,
                   background:`${PASTEL_PURPLE}15`, border:`1px dashed ${PASTEL_PURPLE}40`, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif", marginTop:4 }}>
-                  + {t("Add Page","أضف صفحة")}
+                  + {t("Add Spread","أضف وجهاً")}
                 </button>
               </>
             )}
@@ -1448,13 +1482,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
                 <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, opacity:0.5, marginBottom:8 }}>{t("Page Background","خلفية الصفحة")}</div>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:12 }}>
                   {["#ffffff","#fff8fe","#f5f0ff","#fff5f0","#f0f8ff","#fafaf0","#fff0f5","#f5fff5","#f0f5ff","#fffbf0","#f8f0ff","#fff8f0"].map(clr => (
-                    <div key={clr} onClick={() => updatePage(currentPage,{background:clr})}
+                    <div key={clr} onClick={() => updatePage(activePageIdx,{background:clr})}
                       style={{ width:"100%", aspectRatio:"1", borderRadius:8, background:clr, cursor:"pointer",
                         border: page.background===clr ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}20` }} />
                   ))}
                 </div>
                 <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, opacity:0.5, marginBottom:6 }}>{t("Custom Color","لون مخصص")}</div>
-                <input type="color" value={page.background||"#ffffff"} onChange={e=>updatePage(currentPage,{background:e.target.value})}
+                <input type="color" value={page.background||"#ffffff"} onChange={e=>updatePage(activePageIdx,{background:e.target.value})}
                   style={{ width:"100%", height:36, border:"none", borderRadius:8, cursor:"pointer" }} />
               </>
             )}
@@ -1549,91 +1583,168 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
             </div>
           )}
 
-          {/* Canvas */}
-          <div style={{ padding:32, display:"flex", justifyContent:"center" }}>
-            <div ref={canvasRef} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
-              onClick={e => { if(e.target===canvasRef.current||e.target.dataset.canvas) setSelected(null); }}
-              style={{ width:400, height:520, background:page.background||"#ffffff", borderRadius:4, position:"relative", overflow:"hidden",
-                boxShadow:"0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)", cursor:"default" }}
-              data-canvas="true">
+          {/* Canvas — Two-page spread view */}
+          <div style={{ padding:"32px 24px", display:"flex", justifyContent:"center", alignItems:"flex-start" }}>
+            <div style={{ display:"flex", alignItems:"stretch", gap:0,
+              boxShadow:"0 12px 48px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.10)",
+              borderRadius:6 }}>
 
-              {(page.elements||[]).map(el => (
-                <div key={el.id}
-                  onMouseDown={e => onMouseDownEl(e, el.id)}
-                  style={{
-                    position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
-                    transform:`rotate(${el.rotation||0}deg)`,
-                    cursor:"move", userSelect:"none",
-                    outline: selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
-                    outlineOffset:2,
-                  }}>
-
-                  {el.type==="image" && (
-                    <img src={el.src} alt="" draggable={false}
-                      style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />
-                  )}
-                  {el.type==="sticker" && (
-                    <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                      fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>
-                      {el.content}
-                    </div>
-                  )}
-                  {el.type==="text" && (
-                    selected===el.id ? (
-                      <textarea
-                        autoFocus value={el.content}
-                        onChange={e => updateElement(el.id,{content:e.target.value})}
-                        onMouseDown={e => e.stopPropagation()}
-                        style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
+              {/* ── Left page (Back cover on spread 0, left interior on others) ── */}
+              <div
+                ref={canvasRef}
+                onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+                onClick={e => {
+                  setActiveSide("left");
+                  if (e.target.dataset.canvas) setSelected(null);
+                }}
+                style={{ width:400, height:520,
+                  background: leftPage.background||"#ffffff",
+                  position:"relative", overflow:"hidden",
+                  borderRadius:"6px 0 0 6px",
+                  outline: activeSide==="left" ? `3px solid ${DEEP_PURPLE}` : "none",
+                  cursor:"default",
+                  transition:"outline 0.15s ease" }}
+                data-canvas="true">
+                {(leftPage.elements||[]).map(el => (
+                  <div key={el.id}
+                    onMouseDown={e => { setActiveSide("left"); onMouseDownEl(e, el.id); }}
+                    style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                      transform:`rotate(${el.rotation||0}deg)`, cursor:"move", userSelect:"none",
+                      outline: activeSide==="left" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
+                      outlineOffset:2 }}>
+                    {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
+                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.content}</div>}
+                    {el.type==="text" && (
+                      activeSide==="left" && selected===el.id ? (
+                        <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
+                          onMouseDown={e => e.stopPropagation()}
+                          style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
+                            fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                            color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                            cursor:"text", textAlign:"center", padding:4 }} />
+                      ) : (
+                        <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
                           fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
                           color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                          cursor:"text", textAlign:"center", padding:4 }} />
-                    ) : (
-                      <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                        fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                        color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                        textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
-                        {el.content}
-                      </div>
-                    )
-                  )}
-
-                  {selected===el.id && (
-                    <div onMouseDown={e => onResizeMouseDown(e, el.id)}
-                      style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%",
-                        background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
-                  )}
-                </div>
-              ))}
-
-              {(page.elements||[]).length === 0 && (
-                <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
-                  alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
-                  <div style={{ fontSize:32, marginBottom:8, opacity:0.2 }}>📷</div>
-                  <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.25, textAlign:"center", padding:"0 32px" }}>
-                    {mode==="ai"
-                      ? t("Upload photos then click Auto-Arrange","ارفع الصور ثم اضغط رتّب تلقائياً")
-                      : t("Upload photos or add stickers and text","ارفع صوراً أو أضف ملصقات ونصوص")}
+                          textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
+                          {el.content}
+                        </div>
+                      )
+                    )}
+                    {activeSide==="left" && selected===el.id && (
+                      <div onMouseDown={e => onResizeMouseDown(e, el.id)}
+                        style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%", background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
+                    )}
                   </div>
+                ))}
+                {(leftPage.elements||[]).length === 0 && (
+                  <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                    <div style={{ fontSize:24, marginBottom:6, opacity:0.15 }}>{spreadIndex===0?"📖":"📄"}</div>
+                    <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.2, textAlign:"center", padding:"0 24px" }}>
+                      {spreadIndex===0 ? t("Back Cover","الغلاف الخلفي") : t("Left Page","الصفحة اليسرى")}
+                    </div>
+                  </div>
+                )}
+                {/* Page label */}
+                <div style={{ position:"absolute", bottom:6, left:0, right:0, textAlign:"center", fontSize:10, color:DARK_PURPLE, opacity:0.3, pointerEvents:"none" }}>
+                  {spreadIndex===0 ? t("Back Cover","الغلاف الخلفي") : `${t("Page","ص")} ${leftPageIdx}`}
                 </div>
-              )}
+              </div>
+
+              {/* ── Spine ── */}
+              <div style={{ width:18, background:"linear-gradient(to right, #d0d0d0, #f5f5f5, #e8e8e8, #f0f0f0, #c8c8c8)", flexShrink:0, position:"relative" }}>
+                <div style={{ position:"absolute", top:0, bottom:0, left:0, width:3, background:"linear-gradient(to right, rgba(0,0,0,0.18), transparent)" }} />
+                <div style={{ position:"absolute", top:0, bottom:0, right:0, width:3, background:"linear-gradient(to left, rgba(0,0,0,0.18), transparent)" }} />
+              </div>
+
+              {/* ── Right page (Front cover on spread 0, right interior on others) ── */}
+              <div
+                onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+                onClick={e => {
+                  setActiveSide("right");
+                  if (e.target.dataset.canvas) setSelected(null);
+                }}
+                style={{ width:400, height:520,
+                  background: rightPage.background||"#ffffff",
+                  position:"relative", overflow:"hidden",
+                  borderRadius:"0 6px 6px 0",
+                  outline: activeSide==="right" ? `3px solid ${DEEP_PURPLE}` : "none",
+                  cursor:"default",
+                  transition:"outline 0.15s ease" }}
+                data-canvas="true">
+                {(rightPage.elements||[]).map(el => (
+                  <div key={el.id}
+                    onMouseDown={e => { setActiveSide("right"); onMouseDownEl(e, el.id); }}
+                    style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                      transform:`rotate(${el.rotation||0}deg)`, cursor:"move", userSelect:"none",
+                      outline: activeSide==="right" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
+                      outlineOffset:2 }}>
+                    {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
+                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.content}</div>}
+                    {el.type==="text" && (
+                      activeSide==="right" && selected===el.id ? (
+                        <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
+                          onMouseDown={e => e.stopPropagation()}
+                          style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
+                            fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                            color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                            cursor:"text", textAlign:"center", padding:4 }} />
+                      ) : (
+                        <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                          fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                          color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                          textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
+                          {el.content}
+                        </div>
+                      )
+                    )}
+                    {activeSide==="right" && selected===el.id && (
+                      <div onMouseDown={e => onResizeMouseDown(e, el.id)}
+                        style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%", background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
+                    )}
+                  </div>
+                ))}
+                {(rightPage.elements||[]).length === 0 && (
+                  <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                    <div style={{ fontSize:24, marginBottom:6, opacity:0.15 }}>{spreadIndex===0?"📖":"📄"}</div>
+                    <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.2, textAlign:"center", padding:"0 24px" }}>
+                      {spreadIndex===0 ? t("Front Cover","الغلاف الأمامي") : t("Right Page","الصفحة اليمنى")}
+                    </div>
+                  </div>
+                )}
+                {/* Page label */}
+                <div style={{ position:"absolute", bottom:6, left:0, right:0, textAlign:"center", fontSize:10, color:DARK_PURPLE, opacity:0.3, pointerEvents:"none" }}>
+                  {spreadIndex===0 ? t("Front Cover","الغلاف الأمامي") : `${t("Page","ص")} ${rightPageIdx}`}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Page navigation */}
-          <div style={{ display:"flex", gap:12, marginBottom:24, alignItems:"center" }}>
-            <button disabled={currentPage===0} onClick={() => setCurrentPage(p=>p-1)} style={{
+          {/* Active page indicator */}
+          <div style={{ textAlign:"center", fontSize:12, color:DARK_PURPLE, opacity:0.5, marginBottom:8, marginTop:-16 }}>
+            {t("Editing:","تعديل:")} <strong style={{ color:DEEP_PURPLE }}>
+              {spreadIndex===0
+                ? (activeSide==="left" ? t("Back Cover","الغلاف الخلفي") : t("Front Cover","الغلاف الأمامي"))
+                : (activeSide==="left" ? `${t("Page","صفحة")} ${leftPageIdx}` : `${t("Page","صفحة")} ${rightPageIdx}`)}
+            </strong> — {t("click the other side to switch","اضغط الجهة الأخرى للتبديل")}
+          </div>
+
+          {/* Spread navigation */}
+          <div style={{ display:"flex", gap:12, marginBottom:12, alignItems:"center", justifyContent:"center" }}>
+            <button disabled={spreadIndex===0} onClick={() => { setCurrentPage(Math.max(0, (spreadIndex-1)*2)); setActiveSide("left"); setSelected(null); }} style={{
               background:`${PASTEL_PURPLE}15`, border:"none", borderRadius:8, padding:"8px 16px",
-              cursor:currentPage===0?"not-allowed":"pointer", opacity:currentPage===0?0.3:1,
+              cursor:spreadIndex===0?"not-allowed":"pointer", opacity:spreadIndex===0?0.3:1,
               fontSize:13, color:DEEP_PURPLE, fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>
-              ‹ {t("Prev","السابق")}
+              ‹ {t("Prev Spread","السابق")}
             </button>
-            <span style={{ fontSize:13, fontWeight:600, color:DARK_PURPLE }}>{currentPage+1} / {pages.length}</span>
-            <button disabled={currentPage>=pages.length-1} onClick={() => setCurrentPage(p=>p+1)} style={{
+            <span style={{ fontSize:13, fontWeight:600, color:DARK_PURPLE }}>
+              {spreadIndex===0 ? t("Cover","الغلاف") : `${t("Spread","وجه")} ${spreadIndex}`} ({spreadIndex+1} / {totalSpreads})
+            </span>
+            <button disabled={spreadIndex>=totalSpreads-1} onClick={() => { setCurrentPage(Math.min(pages.length-2,(spreadIndex+1)*2)); setActiveSide("left"); setSelected(null); }} style={{
               background:`${PASTEL_PURPLE}15`, border:"none", borderRadius:8, padding:"8px 16px",
-              cursor:currentPage>=pages.length-1?"not-allowed":"pointer", opacity:currentPage>=pages.length-1?0.3:1,
+              cursor:spreadIndex>=totalSpreads-1?"not-allowed":"pointer", opacity:spreadIndex>=totalSpreads-1?0.3:1,
               fontSize:13, color:DEEP_PURPLE, fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>
-              {t("Next","التالي")} ›
+              {t("Next Spread","التالي")} ›
             </button>
           </div>
 
