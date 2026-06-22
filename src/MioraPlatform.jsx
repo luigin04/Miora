@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
 import { auth, db, ADMIN_EMAIL, ensureAuth } from "./firebase";
 import {
-  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy, getDocs,
+  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import jsPDF from "jspdf";
