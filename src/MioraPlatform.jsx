@@ -318,7 +318,22 @@ export default function MioraPlatform() {
       onDelete={deleteProject} t={t} lang={lang} isRTL={isRTL} />;
   }
 
-  const editorModes = ["editor-manual","editor-ai","editor-template"];
+  if (currentView === "template-picker") {
+    return <TemplatePickerView
+      onBack={() => setCurrentView("home")}
+      onSelect={(template) => {
+        // Create a new project pre-seeded with the chosen template
+        const pid = createProject("template", template.occasion);
+        setProjects(prev => prev.map(p => p.id === pid
+          ? { ...p, title: template.title, pages: template.pages }
+          : p
+        ));
+        setActiveProjectId(pid);
+        setCurrentView("editor-template");
+      }}
+      t={t} lang={lang} isRTL={isRTL} isMobile={isMobile}
+    />;
+  }
   if (editorModes.includes(currentView)) {
     const mode = currentView.replace("editor-","");
     let pid = activeProjectId;
@@ -424,7 +439,7 @@ export default function MioraPlatform() {
             gradient={`linear-gradient(135deg,#E8D5FF30,${PASTEL_PURPLE}25)`} badge={t("Popular","الأكثر طلباً")} isMobile={isMobile} />
           <CreateOptionCard icon={<Icon name="template" size={36} color={DEEP_PURPLE} />} title={t("Use a Template","استخدم قالباً")}
             desc={t("Browse pre-designed album templates by Layal. Drop your photos into a ready-made layout.","تصفح قوالب مصممة مسبقاً من ليال. أضف صورك إلى التخطيط الجاهز.")}
-            onClick={() => { setActiveProjectId(null); setCurrentView("editor-template"); }}
+            onClick={() => { setActiveProjectId(null); setCurrentView("template-picker"); }}
             gradient={`linear-gradient(135deg,#FFE8F020,#F5E6FF30)`} isMobile={isMobile} />
         </div>
       </section>
@@ -1220,6 +1235,455 @@ function OccasionBooksShowcase({ isMobile, t }) {
         fontFamily:"'Playfair Display',serif", letterSpacing:1 }}>
         {t(book.sub, book.subAr)} ·
         <span style={{ fontStyle:"italic", marginLeft:6 }}>{t("and many more","والمزيد")}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Template Library ─────────────────────────────────────────────────────────
+// Each template pre-seeds the editor with a designed cover spread + blank interior pages.
+// The cover page (index 0-1) comes fully styled; interior pages are blank for the user to fill.
+
+function makeBlankPages(count) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + "p" + Math.random().toString(36).slice(2),
+    background: "#ffffff",
+    elements: [],
+  }));
+}
+
+function makeCoverPages(frontBg, frontElements, backBg = "#ffffff", backElements = []) {
+  return [
+    { id: "back-" + Math.random().toString(36).slice(2), background: backBg, elements: backElements },
+    { id: "front-" + Math.random().toString(36).slice(2), background: frontBg, elements: frontElements },
+  ];
+}
+
+const TEMPLATE_LIBRARY = [
+  // ── WEDDING ──────────────────────────────────────────────────────────────
+  {
+    id: "w1", occasion: "Wedding", title: "Our Wedding Day",
+    coverBg: "#fff0f5", spineColor: "#e8c0d0", titleColor: "#c0506a",
+    desc: "Classic floral pink",
+    pages: [
+      ...makeCoverPages("#fff0f5", [
+        { id:"e1", type:"text", content:"OUR\nWEDDING\nDAY", x:30, y:30, w:340, h:120, font:"Londrina Solid", fontSize:52, color:"#c0506a", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"text", content:"Est. 2026", x:120, y:160, w:160, h:36, font:"Dancing Script", fontSize:22, color:"#c0506a", bold:false, italic:true, rotation:0 },
+        { id:"e3", type:"sticker", content:"🌹", x:280, y:140, w:70, h:70, rotation:-15 },
+        { id:"e4", type:"sticker", content:"💐", x:20, y:140, w:60, h:60, rotation:12 },
+        { id:"e5", type:"sticker", content:"✨", x:310, y:260, w:45, h:45, rotation:0 },
+        { id:"e6", type:"sticker", content:"🌸", x:10, y:260, w:45, h:45, rotation:-8 },
+        { id:"e7", type:"text", content:"photo album", x:120, y:470, w:160, h:30, font:"Quicksand", fontSize:12, color:"#c0506a", bold:false, italic:false, rotation:0 },
+      ], "#f8e8ef", [
+        { id:"b1", type:"text", content:"Thank you for\nbeing part of\nour story ♥", x:40, y:180, w:320, h:120, font:"Dancing Script", fontSize:28, color:"#c0506a", bold:false, italic:true, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+  {
+    id: "w2", occasion: "Wedding", title: "Forever & Always",
+    coverBg: "#f5f0ff", spineColor: "#d0b8f0", titleColor: "#7B5EA7",
+    desc: "Elegant purple",
+    pages: [
+      ...makeCoverPages("#f5f0ff", [
+        { id:"e1", type:"text", content:"FOREVER\n& ALWAYS", x:20, y:20, w:360, h:100, font:"Playfair Display", fontSize:44, color:"#4A3068", bold:true, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"💍", x:150, y:140, w:100, h:100, rotation:0 },
+        { id:"e3", type:"sticker", content:"🕊️", x:40, y:160, w:60, h:60, rotation:-10 },
+        { id:"e4", type:"sticker", content:"🕊️", x:300, y:160, w:60, h:60, rotation:10 },
+        { id:"e5", type:"text", content:"2026", x:160, y:260, w:80, h:36, font:"Quicksand", fontSize:18, color:"#7B5EA7", bold:false, italic:false, rotation:0 },
+        { id:"e6", type:"sticker", content:"✨", x:20, y:400, w:50, h:50, rotation:0 },
+        { id:"e7", type:"sticker", content:"✨", x:330, y:420, w:50, h:50, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── TRAVEL ───────────────────────────────────────────────────────────────
+  {
+    id: "t1", occasion: "Travel", title: "Our Adventure",
+    coverBg: "#e8f4f0", spineColor: "#88c8b0", titleColor: "#1a7a5a",
+    desc: "Mint green explorer",
+    pages: [
+      ...makeCoverPages("#e8f4f0", [
+        { id:"e1", type:"text", content:"OUR\nADVENTURE", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:56, color:"#1a7a5a", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"text", content:"2026", x:160, y:140, w:80, h:36, font:"Quicksand", fontSize:20, color:"#1a7a5a", bold:true, italic:false, rotation:0 },
+        { id:"e3", type:"sticker", content:"✈️", x:160, y:200, w:80, h:80, rotation:-15 },
+        { id:"e4", type:"sticker", content:"🗺️", x:30, y:320, w:70, h:70, rotation:8 },
+        { id:"e5", type:"sticker", content:"📸", x:290, y:300, w:65, h:65, rotation:-5 },
+        { id:"e6", type:"sticker", content:"⭐", x:20, y:180, w:40, h:40, rotation:0 },
+        { id:"e7", type:"sticker", content:"⭐", x:340, y:180, w:40, h:40, rotation:0 },
+        { id:"e8", type:"text", content:"memories from around the world", x:40, y:460, w:320, h:30, font:"Quicksand", fontSize:11, color:"#1a7a5a", bold:false, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+  {
+    id: "t2", occasion: "Travel", title: "Solo Trip",
+    coverBg: "#fffafa", spineColor: "#f4c0c8", titleColor: "#e06080",
+    desc: "Solo traveller pink",
+    pages: [
+      ...makeCoverPages("#fffafa", [
+        { id:"e1", type:"text", content:"SOLO\nTRIP", x:30, y:20, w:340, h:110, font:"Londrina Solid", fontSize:70, color:"#e06080", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"text", content:"LOCATION", x:120, y:138, w:160, h:32, font:"Quicksand", fontSize:16, color:"#c04060", bold:true, italic:false, rotation:0 },
+        { id:"e3", type:"sticker", content:"🧳", x:120, y:240, w:160, h:160, rotation:0 },
+        { id:"e4", type:"sticker", content:"✈️", x:130, y:320, w:50, h:50, rotation:-20 },
+        { id:"e5", type:"sticker", content:"🌸", x:290, y:380, w:50, h:50, rotation:10 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── BIRTHDAY ─────────────────────────────────────────────────────────────
+  {
+    id: "b1", occasion: "Birthday", title: "Happy Birthday",
+    coverBg: "#fff8e0", spineColor: "#f4d060", titleColor: "#b8860b",
+    desc: "Golden celebration",
+    pages: [
+      ...makeCoverPages("#fff8e0", [
+        { id:"e1", type:"text", content:"HAPPY\nBIRTHDAY", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:56, color:"#b8860b", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"🎂", x:130, y:160, w:140, h:140, rotation:0 },
+        { id:"e3", type:"sticker", content:"🎉", x:20, y:180, w:70, h:70, rotation:-15 },
+        { id:"e4", type:"sticker", content:"🎈", x:300, y:160, w:65, h:65, rotation:12 },
+        { id:"e5", type:"sticker", content:"🎊", x:20, y:380, w:60, h:60, rotation:8 },
+        { id:"e6", type:"sticker", content:"🎁", x:300, y:370, w:65, h:65, rotation:-10 },
+        { id:"e7", type:"text", content:"make a wish", x:110, y:330, w:180, h:30, font:"Dancing Script", fontSize:20, color:"#b8860b", bold:false, italic:true, rotation:0 },
+        { id:"e8", type:"text", content:"✨ 2026 ✨", x:130, y:460, w:140, h:30, font:"Quicksand", fontSize:14, color:"#b8860b", bold:false, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+  {
+    id: "b2", occasion: "Birthday", title: "Birthday Memories",
+    coverBg: "#fdf0ff", spineColor: "#d0a0f0", titleColor: "#8040b0",
+    desc: "Purple party",
+    pages: [
+      ...makeCoverPages("#fdf0ff", [
+        { id:"e1", type:"text", content:"BIRTHDAY\nMEMORIES", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:50, color:"#8040b0", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"🎂", x:140, y:150, w:120, h:120, rotation:0 },
+        { id:"e3", type:"sticker", content:"🎈", x:20, y:140, w:80, h:80, rotation:-10 },
+        { id:"e4", type:"sticker", content:"🎈", x:300, y:140, w:80, h:80, rotation:10 },
+        { id:"e5", type:"sticker", content:"🎉", x:30, y:360, w:70, h:70, rotation:0 },
+        { id:"e6", type:"sticker", content:"🎊", x:290, y:360, w:70, h:70, rotation:0 },
+        { id:"e7", type:"text", content:"another year of amazing memories", x:20, y:458, w:360, h:30, font:"Quicksand", fontSize:10, color:"#8040b0", bold:false, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── BABY SHOWER ──────────────────────────────────────────────────────────
+  {
+    id: "bs1", occasion: "Baby Shower", title: "Baby's First Year",
+    coverBg: "#f0f8ff", spineColor: "#b8d8f0", titleColor: "#5b8fc9",
+    desc: "Baby blue",
+    pages: [
+      ...makeCoverPages("#f0f8ff", [
+        { id:"e1", type:"text", content:"BABY'S\nFIRST\nYEAR", x:20, y:15, w:360, h:130, font:"Londrina Solid", fontSize:54, color:"#5b8fc9", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"🍼", x:30, y:200, w:80, h:80, rotation:-12 },
+        { id:"e3", type:"sticker", content:"👶", x:150, y:190, w:100, h:100, rotation:0 },
+        { id:"e4", type:"sticker", content:"🧸", x:290, y:200, w:80, h:80, rotation:10 },
+        { id:"e5", type:"sticker", content:"🌙", x:20, y:380, w:60, h:60, rotation:0 },
+        { id:"e6", type:"sticker", content:"⭐", x:310, y:360, w:60, h:60, rotation:0 },
+        { id:"e7", type:"text", content:"a new adventure begins", x:60, y:320, w:280, h:30, font:"Dancing Script", fontSize:20, color:"#5b8fc9", bold:false, italic:true, rotation:0 },
+        { id:"e8", type:"text", content:"2026", x:170, y:470, w:60, h:28, font:"Quicksand", fontSize:14, color:"#5b8fc9", bold:true, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── GRADUATION ───────────────────────────────────────────────────────────
+  {
+    id: "g1", occasion: "Graduation", title: "Graduation Day",
+    coverBg: "#f4f0ff", spineColor: "#c0b0f0", titleColor: "#6040c0",
+    desc: "Classic purple cap",
+    pages: [
+      ...makeCoverPages("#f4f0ff", [
+        { id:"e1", type:"text", content:"CLASS OF\n2026", x:30, y:20, w:340, h:110, font:"Londrina Solid", fontSize:58, color:"#4A3068", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"🎓", x:140, y:160, w:120, h:120, rotation:0 },
+        { id:"e3", type:"sticker", content:"⭐", x:30, y:180, w:60, h:60, rotation:-8 },
+        { id:"e4", type:"sticker", content:"⭐", x:310, y:180, w:60, h:60, rotation:8 },
+        { id:"e5", type:"sticker", content:"🏆", x:40, y:330, w:70, h:70, rotation:0 },
+        { id:"e6", type:"sticker", content:"📚", x:280, y:330, w:70, h:70, rotation:0 },
+        { id:"e7", type:"text", content:"the journey continues", x:70, y:440, w:260, h:30, font:"Dancing Script", fontSize:20, color:"#6040c0", bold:false, italic:true, rotation:0 },
+        { id:"e8", type:"text", content:"Congratulations!", x:70, y:470, w:260, h:28, font:"Quicksand", fontSize:14, color:"#6040c0", bold:true, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── FAMILY ───────────────────────────────────────────────────────────────
+  {
+    id: "f1", occasion: "Family", title: "Our Family Story",
+    coverBg: "#fff5e8", spineColor: "#f4c090", titleColor: "#c86020",
+    desc: "Warm terracotta",
+    pages: [
+      ...makeCoverPages("#fff5e8", [
+        { id:"e1", type:"text", content:"OUR\nFAMILY\nSTORY", x:30, y:15, w:340, h:130, font:"Londrina Solid", fontSize:54, color:"#c86020", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"🏡", x:130, y:180, w:140, h:140, rotation:0 },
+        { id:"e3", type:"sticker", content:"❤️", x:30, y:200, w:65, h:65, rotation:-8 },
+        { id:"e4", type:"sticker", content:"❤️", x:300, y:200, w:65, h:65, rotation:8 },
+        { id:"e5", type:"sticker", content:"💕", x:40, y:360, w:60, h:60, rotation:0 },
+        { id:"e6", type:"sticker", content:"💕", x:290, y:360, w:60, h:60, rotation:0 },
+        { id:"e7", type:"text", content:"together is our favourite place", x:30, y:455, w:340, h:30, font:"Dancing Script", fontSize:18, color:"#c86020", bold:false, italic:true, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── ANNIVERSARY ──────────────────────────────────────────────────────────
+  {
+    id: "a1", occasion: "Anniversary", title: "Our Anniversary",
+    coverBg: "#fff0f5", spineColor: "#f4b0c8", titleColor: "#c0506a",
+    desc: "Romantic rose",
+    pages: [
+      ...makeCoverPages("#fff0f5", [
+        { id:"e1", type:"text", content:"FOREVER\nTOGETHER", x:20, y:20, w:360, h:110, font:"Playfair Display", fontSize:42, color:"#c0506a", bold:true, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"❤️", x:160, y:160, w:80, h:80, rotation:0 },
+        { id:"e3", type:"sticker", content:"🌹", x:30, y:160, w:70, h:70, rotation:-10 },
+        { id:"e4", type:"sticker", content:"🌹", x:300, y:160, w:70, h:70, rotation:10 },
+        { id:"e5", type:"sticker", content:"🥂", x:40, y:360, w:70, h:70, rotation:0 },
+        { id:"e6", type:"sticker", content:"🥂", x:280, y:360, w:70, h:70, rotation:0 },
+        { id:"e7", type:"text", content:"years of love & laughter", x:60, y:280, w:280, h:30, font:"Dancing Script", fontSize:22, color:"#c0506a", bold:false, italic:true, rotation:0 },
+        { id:"e8", type:"text", content:"2026", x:170, y:460, w:60, h:28, font:"Quicksand", fontSize:16, color:"#c0506a", bold:true, italic:false, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+
+  // ── ENGAGEMENT ───────────────────────────────────────────────────────────
+  {
+    id: "en1", occasion: "Engagement", title: "She Said Yes!",
+    coverBg: "#fdf0ff", spineColor: "#d0a0f0", titleColor: "#8040b0",
+    desc: "Lilac proposal",
+    pages: [
+      ...makeCoverPages("#fdf0ff", [
+        { id:"e1", type:"text", content:"SHE SAID\nYES!", x:30, y:20, w:340, h:120, font:"Londrina Solid", fontSize:58, color:"#8040b0", bold:false, italic:false, rotation:0 },
+        { id:"e2", type:"sticker", content:"💍", x:150, y:170, w:100, h:100, rotation:0 },
+        { id:"e3", type:"sticker", content:"✨", x:30, y:180, w:60, h:60, rotation:0 },
+        { id:"e4", type:"sticker", content:"✨", x:310, y:180, w:60, h:60, rotation:0 },
+        { id:"e5", type:"sticker", content:"💐", x:30, y:340, w:80, h:80, rotation:-8 },
+        { id:"e6", type:"sticker", content:"💕", x:290, y:350, w:70, h:70, rotation:8 },
+        { id:"e7", type:"text", content:"the beginning of forever", x:50, y:450, w:300, h:30, font:"Dancing Script", fontSize:20, color:"#8040b0", bold:false, italic:true, rotation:0 },
+      ]),
+      ...makeBlankPages(14),
+    ],
+  },
+];
+
+// Group templates by occasion for the picker UI
+const TEMPLATE_BY_OCCASION = TEMPLATE_LIBRARY.reduce((acc, tpl) => {
+  if (!acc[tpl.occasion]) acc[tpl.occasion] = [];
+  acc[tpl.occasion].push(tpl);
+  return acc;
+}, {});
+
+const TEMPLATE_OCCASIONS = Object.keys(TEMPLATE_BY_OCCASION);
+
+// ─── Template Picker View ─────────────────────────────────────────────────────
+function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
+  const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
+  const [hovered, setHovered] = useState(null);
+
+  const occasionAr = {
+    Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
+    "Baby Shower":"استقبال مولود", Graduation:"تخرج",
+    Family:"عائلة", Anniversary:"ذكرى سنوية", Engagement:"خطوبة",
+  };
+
+  const templates = TEMPLATE_BY_OCCASION[activeOccasion] || [];
+
+  // Mini book preview for each template
+  const MiniBook = ({ tpl, size = isMobile ? 130 : 160 }) => {
+    const H = Math.round(size * 1.4);
+    const SPINE = Math.round(size * 0.12);
+    const coverEls = tpl.pages[1]?.elements || [];
+    return (
+      <div style={{ display:"flex", perspective:600, flexShrink:0 }}>
+        {/* Spine */}
+        <div style={{ width:SPINE, height:H, background:tpl.spineColor,
+          borderRadius:"4px 0 0 4px", display:"flex", alignItems:"center", justifyContent:"center",
+          boxShadow:"inset -2px 0 6px rgba(0,0,0,0.1)", flexShrink:0 }}>
+          <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
+            fontSize:Math.max(6, size*0.045), fontWeight:700, letterSpacing:1.5,
+            textTransform:"uppercase", color:tpl.titleColor, opacity:0.8,
+            fontFamily:"'Quicksand',sans-serif" }}>
+            {tpl.title}
+          </div>
+        </div>
+        {/* Cover */}
+        <div style={{ width:size, height:H, background:tpl.coverBg,
+          borderRadius:"0 6px 6px 0", overflow:"hidden", position:"relative",
+          transform:"perspective(500px) rotateY(-6deg)",
+          transformOrigin:"left center",
+          boxShadow:"4px 4px 16px rgba(74,48,104,0.15)" }}>
+          {/* Spine shadow */}
+          <div style={{ position:"absolute", left:0, top:0, bottom:0, width:8,
+            background:"linear-gradient(to right,rgba(0,0,0,0.08),transparent)", zIndex:2 }} />
+          {/* Scale down the actual template elements */}
+          <div style={{ position:"absolute", inset:0,
+            transform:`scale(${size/400})`, transformOrigin:"top left",
+            width:400, height:520, pointerEvents:"none" }}>
+            {coverEls.filter(el => el.type === "text").map(el => (
+              <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||16,
+                color:el.color||"#333", fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                display:"flex", alignItems:"center", justifyContent:"center", textAlign:"center",
+                whiteSpace:"pre-wrap", wordBreak:"break-word", lineHeight:1.1 }}>
+                {el.content}
+              </div>
+            ))}
+            {coverEls.filter(el => el.type === "sticker").map(el => (
+              <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:Math.min(el.w, el.h)*0.7 }}>
+                {el.content}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(160deg,${SOFT_PINK}30,${WARM_WHITE})`,
+      fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
+      <link href={FONT_LINK} rel="stylesheet" />
+
+      {/* Header */}
+      <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`,
+        padding: isMobile ? "14px 16px" : "16px 32px",
+        display:"flex", alignItems:"center", justifyContent:"space-between",
+        position:"sticky", top:0, zIndex:50, boxShadow:`0 2px 12px ${PASTEL_PURPLE}08` }}>
+        <button onClick={onBack} style={{ ...backBtnStyle, marginBottom:0 }}>
+          ← {t("Back","عودة")}
+        </button>
+        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:20, color:DEEP_PURPLE, letterSpacing:2 }}>
+          MIORA <span style={{ fontFamily:"'Quicksand'", fontSize:11, fontWeight:300, opacity:0.5 }}>templates</span>
+        </div>
+        <div style={{ width:60 }} />
+      </div>
+
+      <div style={{ maxWidth:900, margin:"0 auto", padding: isMobile ? "24px 16px" : "40px 32px" }}>
+
+        {/* Title */}
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 24 : 32, color:DARK_PURPLE, marginBottom:8 }}>
+            {t("Choose a Template","اختر قالباً")}
+          </h1>
+          <p style={{ fontSize:14, color:DARK_PURPLE, opacity:0.5, lineHeight:1.6 }}>
+            {t("Pick a design for your occasion. Add your photos inside the editor.",
+               "اختر تصميماً لمناسبتك. أضف صورك في المحرر.")}
+          </p>
+        </div>
+
+        {/* Occasion tab bar */}
+        <div style={{ display:"flex", gap: isMobile ? 6 : 10, overflowX:"auto", paddingBottom:8,
+          marginBottom:32, justifyContent: isMobile ? "flex-start" : "center", flexWrap: isMobile ? "nowrap" : "wrap" }}>
+          {TEMPLATE_OCCASIONS.map(occ => (
+            <button key={occ} onClick={() => setActiveOccasion(occ)} style={{
+              padding: isMobile ? "8px 14px" : "10px 20px", borderRadius:24, fontSize: isMobile ? 12 : 13,
+              fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"'Quicksand',sans-serif",
+              border: activeOccasion===occ ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}40`,
+              background: activeOccasion===occ ? `${PASTEL_PURPLE}25` : "white",
+              color: activeOccasion===occ ? DEEP_PURPLE : DARK_PURPLE,
+              transition:"all 0.2s ease", flexShrink:0 }}>
+              {t(occ, occasionAr[occ] || occ)}
+            </button>
+          ))}
+        </div>
+
+        {/* Template grid */}
+        <div style={{ display:"flex", gap: isMobile ? 16 : 24, flexWrap:"wrap", justifyContent:"center" }}>
+          {templates.map(tpl => (
+            <div key={tpl.id}
+              onMouseEnter={() => setHovered(tpl.id)}
+              onMouseLeave={() => setHovered(null)}
+              style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16,
+                cursor:"pointer", transition:"transform 0.2s ease",
+                transform: hovered===tpl.id ? "translateY(-6px)" : "translateY(0)" }}
+              onClick={() => onSelect(tpl)}>
+
+              {/* Book preview */}
+              <div style={{ position:"relative" }}>
+                <MiniBook tpl={tpl} />
+                {/* Hover overlay */}
+                {hovered===tpl.id && (
+                  <div style={{ position:"absolute", inset:0, borderRadius:6,
+                    background:"rgba(123,94,167,0.08)",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    border:`2px solid ${DEEP_PURPLE}` }}>
+                  </div>
+                )}
+              </div>
+
+              {/* Label + CTA */}
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontWeight:700, fontSize:14, color:DARK_PURPLE, marginBottom:2 }}>{tpl.title}</div>
+                <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.45, marginBottom:10 }}>{tpl.desc}</div>
+                <button onClick={e => { e.stopPropagation(); onSelect(tpl); }} style={{
+                  background: hovered===tpl.id ? DEEP_PURPLE : "transparent",
+                  border:`1.5px solid ${DEEP_PURPLE}`,
+                  borderRadius:20, padding:"7px 20px", fontSize:12, fontWeight:700,
+                  color: hovered===tpl.id ? "white" : DEEP_PURPLE,
+                  cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
+                  transition:"all 0.2s ease" }}>
+                  {t("Use This Template","استخدم هذا القالب")}
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Start from scratch card */}
+          <div
+            onMouseEnter={() => setHovered("scratch")}
+            onMouseLeave={() => setHovered(null)}
+            style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:16,
+              cursor:"pointer", transition:"transform 0.2s ease",
+              transform: hovered==="scratch" ? "translateY(-6px)" : "translateY(0)" }}
+            onClick={() => { /* go to blank template editor */ onSelect({ id:"scratch", occasion:activeOccasion, title:"", pages: makeBlankPages(16) }); }}>
+
+            {/* Blank book mockup */}
+            <div style={{ display:"flex", perspective:600 }}>
+              <div style={{ width: isMobile ? 16 : 20, height: isMobile ? 182 : 224,
+                background:`${PASTEL_PURPLE}30`, borderRadius:"4px 0 0 4px", flexShrink:0 }} />
+              <div style={{ width: isMobile ? 130 : 160, height: isMobile ? 182 : 224,
+                background:"white", borderRadius:"0 6px 6px 0",
+                border:`2px dashed ${PASTEL_PURPLE}50`,
+                display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12,
+                transform:"perspective(500px) rotateY(-6deg)", transformOrigin:"left center",
+                boxShadow:"4px 4px 16px rgba(74,48,104,0.08)" }}>
+                <div style={{ width:40, height:40, borderRadius:"50%",
+                  border:`2px dashed ${PASTEL_PURPLE}60`,
+                  display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <span style={{ fontSize:20, color:PASTEL_PURPLE }}>+</span>
+                </div>
+                <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.4, textAlign:"center", padding:"0 12px" }}>
+                  {t("Start from scratch","من الصفر")}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontWeight:700, fontSize:14, color:DARK_PURPLE, marginBottom:2 }}>{t("Blank Canvas","لوحة فارغة")}</div>
+              <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.45, marginBottom:10 }}>{t("Full creative freedom","حرية إبداعية كاملة")}</div>
+              <button onClick={e => { e.stopPropagation(); onSelect({ id:"scratch", occasion:activeOccasion, title:"", pages: makeBlankPages(16) }); }} style={{
+                background: hovered==="scratch" ? DARK_PURPLE : "transparent",
+                border:`1.5px solid ${DARK_PURPLE}`,
+                borderRadius:20, padding:"7px 20px", fontSize:12, fontWeight:700,
+                color: hovered==="scratch" ? "white" : DARK_PURPLE,
+                cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
+                transition:"all 0.2s ease" }}>
+                {t("Start from Scratch","ابدأ من الصفر")}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom hint */}
+        <p style={{ textAlign:"center", fontSize:12, color:DARK_PURPLE, opacity:0.35, marginTop:40, lineHeight:1.6 }}>
+          {t("All templates are fully customisable — change colours, fonts, add photos and stickers in the editor.",
+             "جميع القوالب قابلة للتخصيص بالكامل — غيّر الألوان والخطوط وأضف الصور والملصقات في المحرر.")}
+        </p>
       </div>
     </div>
   );
