@@ -199,8 +199,20 @@ const backBtnStyle = {
   fontFamily:"'Quicksand',sans-serif",
 };
 
+// ─── Responsive hook ─────────────────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", fn, { passive:true });
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return isMobile;
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function MioraPlatform() {
+  const isMobile = useIsMobile();
   const [lang,            setLang]            = useState(() => loadFromStorage(STORAGE_KEYS.LANG,     "en"));
   const [currentView,     setCurrentView]     = useState(() => window.location.hash === "#admin" ? "admin" : "home");
   const [selectedPackage, setSelectedPackage] = useState(null);
@@ -303,7 +315,7 @@ export default function MioraPlatform() {
     return <BookEditorView mode={mode} project={project}
       onBack={() => { setActiveProjectId(null); setCurrentView("home"); }}
       onUpdate={updates => updateProject(pid, updates)}
-      t={t} lang={lang} isRTL={isRTL} />;
+      t={t} lang={lang} isRTL={isRTL} isMobile={isMobile} />;
   }
 
   if (currentView === "payment") {
@@ -336,89 +348,125 @@ export default function MioraPlatform() {
         background: scrollY>50 ? "rgba(255,254,249,0.96)" : "transparent",
         backdropFilter: scrollY>50 ? "blur(12px)" : "none",
         borderBottom: scrollY>50 ? `1px solid ${PASTEL_PURPLE}40` : "none",
-        transition:"all 0.3s ease", padding:"12px 24px",
+        transition:"all 0.3s ease", padding: isMobile ? "10px 16px" : "12px 24px",
         display:"flex", justifyContent:"space-between", alignItems:"center",
       }}>
-        <div onClick={() => setCurrentView("home")} style={{ fontFamily:"'Londrina Solid',cursive", fontSize:28, color:DEEP_PURPLE, letterSpacing:2, cursor:"pointer" }}>
-          MIORA <span style={{ fontFamily:"'Quicksand'", fontSize:13, fontWeight:300, opacity:0.7, letterSpacing:1 }}>by Layal</span>
+        <div onClick={() => setCurrentView("home")} style={{ fontFamily:"'Londrina Solid',cursive",
+          fontSize: isMobile ? 22 : 28, color:DEEP_PURPLE, letterSpacing:2, cursor:"pointer", flexShrink:0 }}>
+          MIORA <span style={{ fontFamily:"'Quicksand'", fontSize: isMobile ? 10 : 13, fontWeight:300, opacity:0.7, letterSpacing:1 }}>by Layal</span>
         </div>
-        <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
-          <a href="#create-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Create","أنشئ")}</a>
+        <div style={{ display:"flex", gap: isMobile ? 8 : 12, alignItems:"center", flexWrap:"nowrap", overflowX:"auto" }}>
+          {!isMobile && <a href="#create-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Create","أنشئ")}</a>}
           {projects.length > 0 && (
-            <span onClick={() => setCurrentView("my-projects")} style={{ fontSize:13, color:DEEP_PURPLE, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:4 }}>
-              {t("My Projects","مشاريعي")}
-              <span style={{ background:GOLD_ACCENT, color:"white", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:10 }}>{projects.length}</span>
+            <span onClick={() => setCurrentView("my-projects")} style={{ fontSize: isMobile ? 12 : 13, color:DEEP_PURPLE, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
+              {isMobile ? "📁" : t("My Projects","مشاريعي")}
+              <span style={{ background:GOLD_ACCENT, color:"white", fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10 }}>{projects.length}</span>
             </span>
           )}
-          <span onClick={() => setCurrentView("my-orders")} style={{ fontSize:13, color:DARK_PURPLE, fontWeight:500, opacity:0.7, cursor:"pointer" }}>{t("Orders","الطلبات")}</span>
-          <a href="#pricing-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Pricing","الأسعار")}</a>
-          <a href="#reviews-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Reviews","التقييمات")}</a>
+          <span onClick={() => setCurrentView("my-orders")} style={{ fontSize: isMobile ? 12 : 13, color:DARK_PURPLE, fontWeight:500, opacity:0.7, cursor:"pointer", whiteSpace:"nowrap" }}>
+            {isMobile ? "🧾" : t("Orders","الطلبات")}
+          </span>
+          {!isMobile && <a href="#pricing-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Pricing","الأسعار")}</a>}
+          {!isMobile && <a href="#reviews-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Reviews","التقييمات")}</a>}
           <button onClick={() => setLang(lang==="en"?"ar":"en")} style={{
             background:`${PASTEL_PURPLE}30`, border:`1px solid ${PASTEL_PURPLE}60`,
-            borderRadius:20, padding:"6px 14px", cursor:"pointer", fontSize:13, color:DEEP_PURPLE, fontWeight:600 }}>
+            borderRadius:20, padding: isMobile ? "5px 10px" : "6px 14px",
+            cursor:"pointer", fontSize: isMobile ? 11 : 13, color:DEEP_PURPLE, fontWeight:600, whiteSpace:"nowrap" }}>
             {lang==="en"?"عربي":"EN"}
           </button>
         </div>
       </nav>
 
-      {/* Hero */}
+      {/* Hero — Animated 3D Book */}
       <section style={{ minHeight:"100vh", display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center",
-        textAlign:"center", padding:"120px 24px 60px",
-        background:`linear-gradient(180deg,${SOFT_PINK} 0%,${WARM_WHITE} 60%)`,
+        textAlign:"center", padding: isMobile ? "100px 20px 48px" : "120px 24px 60px",
+        background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 40%,${WARM_WHITE} 100%)`,
         position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", top:-80, right:-80, width:300, height:300, borderRadius:"50%", background:`${PASTEL_PURPLE}15`, pointerEvents:"none" }} />
-        <div style={{ position:"absolute", bottom:-40, left:-60, width:200, height:200, borderRadius:"50%", background:`${PASTEL_PURPLE}10`, pointerEvents:"none" }} />
-        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:"clamp(48px,10vw,96px)", color:DEEP_PURPLE, lineHeight:1, marginBottom:8, letterSpacing:4, animation:"fadeInUp 0.8s ease-out" }}>MIORA</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:"clamp(14px,3vw,20px)", color:DARK_PURPLE, opacity:0.6, letterSpacing:6, textTransform:"uppercase", marginBottom:32, animation:"fadeInUp 0.8s ease-out 0.2s both" }}>by Layal</div>
-        <p style={{ fontSize:"clamp(16px,2.5vw,20px)", maxWidth:580, lineHeight:1.7, color:DARK_PURPLE, opacity:0.8, fontWeight:300, marginBottom:40, animation:"fadeInUp 0.8s ease-out 0.4s both" }}>
-          {t("Create beautiful photo albums for life's most precious moments. Design your own, let AI create for you, or choose from curated templates.",
-             "أنشئ ألبومات صور جميلة لأغلى لحظات الحياة. صمم بنفسك، دع الذكاء الاصطناعي يصمم لك، أو اختر من قوالبنا.")}
+
+        {/* Background blobs */}
+        <div style={{ position:"absolute", top:-80, right:-80, width:300, height:300, borderRadius:"50%", background:`${PASTEL_PURPLE}12`, pointerEvents:"none" }} />
+        <div style={{ position:"absolute", bottom:-40, left:-60, width:200, height:200, borderRadius:"50%", background:`${PASTEL_PURPLE}08`, pointerEvents:"none" }} />
+
+        {/* Floating stickers */}
+        <HeroStickers />
+
+        {/* MIORA title */}
+        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:isMobile?"clamp(42px,12vw,64px)":"clamp(48px,10vw,80px)",
+          color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4, animation:"fadeInUp 0.8s ease-out" }}>MIORA</div>
+        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?12:16,
+          color:DARK_PURPLE, opacity:0.5, letterSpacing:6, textTransform:"uppercase", marginBottom: isMobile ? 28 : 36,
+          animation:"fadeInUp 0.8s ease-out 0.2s both" }}>by Layal</div>
+
+        {/* Animated 3D book */}
+        <AnimatedBook isMobile={isMobile} t={t} />
+
+        {/* Tagline */}
+        <p style={{ fontSize:isMobile?15:18, maxWidth:480, lineHeight:1.7, color:DARK_PURPLE, opacity:0.75,
+          fontWeight:300, margin:isMobile?"24px 0 28px":"32px 0 36px", animation:"fadeInUp 0.8s ease-out 0.4s both",
+          padding:"0 8px" }}>
+          {t("Beautiful photo albums for life's most precious moments.",
+             "ألبومات صور جميلة لأغلى لحظات الحياة.")}
         </p>
-        <div style={{ display:"flex", gap:16, flexWrap:"wrap", justifyContent:"center", animation:"fadeInUp 0.8s ease-out 0.6s both" }}>
-          <HeroBtn label={t("Start Creating","ابدأ التصميم")} primary onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
-          {projects.length > 0 && <HeroBtn label={t(`My Projects (${projects.length})`,`مشاريعي (${projects.length})`)} onClick={() => setCurrentView("my-projects")} />}
-          <HeroBtn label={t("View Pricing","عرض الأسعار")} onClick={() => document.getElementById("pricing-section")?.scrollIntoView({behavior:"smooth"})} />
+
+        {/* CTA Buttons */}
+        <div style={{ display:"flex", gap:12, flexWrap:"wrap", justifyContent:"center", animation:"fadeInUp 0.8s ease-out 0.6s both" }}>
+          <HeroBtn label={t("Start Creating","ابدأ التصميم")} primary
+            onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
+          {projects.length > 0 && <HeroBtn label={t(`My Projects (${projects.length})`,`مشاريعي (${projects.length})`)}
+            onClick={() => setCurrentView("my-projects")} />}
+          {!isMobile && <HeroBtn label={t("View Pricing","عرض الأسعار")}
+            onClick={() => document.getElementById("pricing-section")?.scrollIntoView({behavior:"smooth"})} />}
+        </div>
+
+        {/* Scroll hint */}
+        <div style={{ marginTop:isMobile?32:40, display:"flex", flexDirection:"column", alignItems:"center", gap:5,
+          opacity:0.3, animation:"fadeInUp 0.8s ease-out 1s both" }}>
+          {[0,1,2].map(i => (
+            <div key={i} style={{ width:5, height:5, borderRadius:"50%", background:DEEP_PURPLE,
+              animation:`scrollDot 1.4s ease-in-out ${i*0.2}s infinite` }} />
+          ))}
         </div>
       </section>
 
       {/* Occasions */}
-      <section style={{ padding:"80px 24px", background:WARM_WHITE, textAlign:"center" }}>
+      <section style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:WARM_WHITE, textAlign:"center" }}>
         <SectionTitle title={t("For Every Occasion","لكل مناسبة")} subtitle={t("Celebrate your milestones with a beautifully crafted album","احتفل بمناسباتك مع ألبوم مصمم بعناية")} />
-        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:20, maxWidth:800, margin:"0 auto" }}>
+        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap: isMobile ? 10 : 20, maxWidth:800, margin:"0 auto" }}>
           {OCCASIONS.map((occ,i) => (
             <div key={i} style={{ background:`linear-gradient(135deg,${SOFT_PINK},white)`, border:`1px solid ${PASTEL_PURPLE}30`,
-              borderRadius:16, padding:"20px 28px", minWidth:130, transition:"all 0.3s ease", cursor:"pointer",
-              boxShadow:`0 2px 12px ${PASTEL_PURPLE}10` }}
-              onMouseEnter={e => { e.currentTarget.style.transform="translateY(-4px)"; e.currentTarget.style.boxShadow=`0 8px 24px ${PASTEL_PURPLE}25`; }}
-              onMouseLeave={e => { e.currentTarget.style.transform="translateY(0)";   e.currentTarget.style.boxShadow=`0 2px 12px ${PASTEL_PURPLE}10`; }}>
-              <div style={{ fontSize:32, marginBottom:8 }}>{occ.emoji}</div>
-              <div style={{ fontWeight:600, fontSize:13, color:DARK_PURPLE }}>{t(occ.name,occ.nameAr)}</div>
+              borderRadius:14, padding: isMobile ? "14px 16px" : "20px 28px",
+              minWidth: isMobile ? "calc(25% - 10px)" : 130,
+              transition:"all 0.3s ease", cursor:"pointer", boxShadow:`0 2px 12px ${PASTEL_PURPLE}10` }}
+              onMouseEnter={e => { if(!isMobile){e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 8px 24px ${PASTEL_PURPLE}25`;} }}
+              onMouseLeave={e => { if(!isMobile){e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 2px 12px ${PASTEL_PURPLE}10`;} }}>
+              <div style={{ fontSize: isMobile ? 24 : 32, marginBottom:6 }}>{occ.emoji}</div>
+              <div style={{ fontWeight:600, fontSize: isMobile ? 10 : 13, color:DARK_PURPLE }}>{t(occ.name,occ.nameAr)}</div>
             </div>
           ))}
         </div>
       </section>
 
       {/* Create Section */}
-      <section id="create-section" style={{ padding:"80px 24px", background:`linear-gradient(180deg,${WARM_WHITE},${SOFT_PINK}30)`, textAlign:"center" }}>
+      <section id="create-section" style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:`linear-gradient(180deg,${WARM_WHITE},${SOFT_PINK}30)`, textAlign:"center" }}>
         <SectionTitle title={t("Create Your Album","أنشئ ألبومك")} subtitle={t("Choose how you'd like to build your photo book","اختر الطريقة التي تفضلها")} />
-        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:24, maxWidth:1000, margin:"0 auto" }}>
+        <div style={{ display:"flex", flexDirection: isMobile ? "column" : "row", flexWrap:"wrap", justifyContent:"center", gap: isMobile ? 14 : 24, maxWidth:1000, margin:"0 auto" }}>
           <CreateOptionCard icon="✏️" title={t("Design Your Own","صمم بنفسك")}
             desc={t("Drag & drop photos, add stickers, text and decorations. Full creative control.","اسحب وأفلت صورك، أضف ملصقات ونصوص. تحكم إبداعي كامل.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-manual"); }}
-            gradient={`linear-gradient(135deg,${PASTEL_PURPLE}20,${SOFT_PINK}40)`} />
+            gradient={`linear-gradient(135deg,${PASTEL_PURPLE}20,${SOFT_PINK}40)`} isMobile={isMobile} />
           <CreateOptionCard icon="🤖" title={t("AI-Powered Design","تصميم بالذكاء الاصطناعي")}
             desc={t("Upload your photos and let our AI create a stunning layout automatically.","ارفع صورك ودع الذكاء الاصطناعي يصمم تخطيطاً مذهلاً تلقائياً.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-ai"); }}
-            gradient={`linear-gradient(135deg,#E8D5FF30,${PASTEL_PURPLE}25)`} badge={t("Popular","الأكثر طلباً")} />
+            gradient={`linear-gradient(135deg,#E8D5FF30,${PASTEL_PURPLE}25)`} badge={t("Popular","الأكثر طلباً")} isMobile={isMobile} />
           <CreateOptionCard icon="📋" title={t("Use a Template","استخدم قالباً")}
             desc={t("Browse pre-designed album templates by Layal. Drop your photos into a ready-made layout.","تصفح قوالب مصممة مسبقاً من ليال. أضف صورك إلى التخطيط الجاهز.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-template"); }}
-            gradient={`linear-gradient(135deg,#FFE8F020,#F5E6FF30)`} />
+            gradient={`linear-gradient(135deg,#FFE8F020,#F5E6FF30)`} isMobile={isMobile} />
         </div>
       </section>
 
       {/* How it works */}
-      <section style={{ padding:"80px 24px", background:WARM_WHITE, textAlign:"center" }}>
+      <section style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:WARM_WHITE, textAlign:"center" }}>
         <SectionTitle title={t("How It Works","كيف يعمل")} subtitle={t("From photos to a printed album in 4 simple steps","من الصور إلى ألبوم مطبوع في 4 خطوات")} />
         <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:32, maxWidth:900, margin:"0 auto" }}>
           {[
@@ -552,10 +600,157 @@ export default function MioraPlatform() {
 
       <style>{`
         @keyframes fadeInUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes floatBook { 0%,100%{transform:translateY(0) rotateX(3deg)} 50%{transform:translateY(-8px) rotateX(3deg)} }
+        @keyframes openCover { 0%{transform:rotateY(0deg)} 100%{transform:rotateY(-155deg)} }
+        @keyframes revealInner { 0%,70%{opacity:0} 100%{opacity:1} }
+        @keyframes stickerRise { 0%{transform:translateY(60px) rotate(0deg);opacity:0} 15%{opacity:0.85} 85%{opacity:0.85} 100%{transform:translateY(-120px) rotate(360deg);opacity:0} }
+        @keyframes scrollDot { 0%,100%{opacity:0.3;transform:translateY(0)} 50%{opacity:1;transform:translateY(4px)} }
+        @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes overlayIn { from{opacity:0} to{opacity:1} }
         *{box-sizing:border-box;margin:0;padding:0} body{margin:0}
         ::selection{background:${PASTEL_PURPLE}60}
         textarea,input,select{font-family:'Quicksand','Noto Sans Arabic',sans-serif}
+        @media(max-width:768px){
+          .desktop-only{display:none!important}
+          .mobile-nav-wrap{flex-wrap:nowrap;overflow-x:auto;gap:8px!important}
+        }
+        @media(min-width:769px){
+          .mobile-only{display:none!important}
+        }
       `}</style>
+    </div>
+  );
+}
+
+// ─── Hero Animated Components ─────────────────────────────────────────────────
+const HERO_STICKERS = ["🌸","💜","✨","🌹","💕","🌷","💫","🎀","🌺","💖","🌼","⭐"];
+
+function HeroStickers() {
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    const spawn = () => {
+      const id = generateId();
+      const s = {
+        id, emoji: HERO_STICKERS[Math.floor(Math.random() * HERO_STICKERS.length)],
+        left: Math.random() * 88 + "%",
+        size: 16 + Math.random() * 16,
+        duration: 4 + Math.random() * 4,
+        delay: Math.random() * 1.5,
+      };
+      setItems(prev => [...prev.slice(-10), s]);
+      setTimeout(() => setItems(prev => prev.filter(x => x.id !== id)), (s.duration + s.delay + 0.5) * 1000);
+    };
+    spawn(); spawn(); spawn();
+    const iv = setInterval(spawn, 1200);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
+      {items.map(s => (
+        <div key={s.id} style={{
+          position:"absolute", bottom:0, left:s.left, fontSize:s.size,
+          animation:`stickerRise ${s.duration}s ease ${s.delay}s forwards`,
+          opacity:0 }}>
+          {s.emoji}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AnimatedBook({ isMobile, t }) {
+  const [isOpen, setIsOpen] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsOpen(true), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const bookW = isMobile ? 160 : 200;
+  const bookH = isMobile ? 220 : 280;
+  const spineW = 16;
+
+  return (
+    <div
+      onClick={() => setIsOpen(o => !o)}
+      style={{ perspective:1200, width: isMobile ? bookW*2+spineW+20 : bookW*2+spineW+20,
+        height:bookH, position:"relative", cursor:"pointer",
+        animation:"floatBook 4s ease-in-out infinite", marginTop: isMobile ? 8 : 16 }}>
+
+      {/* Inner page (left, always visible) */}
+      <div style={{ position:"absolute", left:0, top:0, width:bookW, height:bookH,
+        background:"#fffef9", borderRadius:"8px 3px 3px 8px",
+        boxShadow:"-3px 4px 20px rgba(74,48,104,0.1)",
+        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"space-between",
+        padding:isMobile?"12px 10px":"18px 14px", overflow:"hidden",
+        opacity:isOpen?1:0, transition:"opacity 0.4s ease 0.6s" }}>
+        <div style={{ fontSize:isMobile?9:10, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.4 }}>01</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, width:"100%" }}>
+          <div style={{ background:`${PASTEL_PURPLE}20`, borderRadius:4, height:isMobile?44:60, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?16:20, gridColumn:"1/-1" }}>🌅</div>
+          <div style={{ background:`${SOFT_PINK}40`, borderRadius:4, height:isMobile?36:48, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?14:18 }}>🌸</div>
+          <div style={{ background:`${PASTEL_PURPLE}15`, borderRadius:4, height:isMobile?36:48, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?14:18 }}>✨</div>
+        </div>
+        <div style={{ fontSize:isMobile?8:9, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.35, fontFamily:"'Playfair Display',serif" }}>
+          {t("Our Story","قصتنا")}
+        </div>
+      </div>
+
+      {/* Spine */}
+      <div style={{ position:"absolute", left:bookW-2, top:0, width:spineW+4, height:bookH,
+        background:"linear-gradient(to right,#d4a8bc,#e8c4d4,#d4a8bc)",
+        display:"flex", alignItems:"center", justifyContent:"center", zIndex:5 }}>
+        <div style={{ fontSize:7, letterSpacing:3, textTransform:"uppercase",
+          color:"#a07888", writingMode:"vertical-rl", transform:"rotate(180deg)", opacity:0.6,
+          fontFamily:"'Playfair Display',serif" }}>Miora</div>
+      </div>
+
+      {/* Front cover — animates open */}
+      <div style={{ position:"absolute", left:bookW+spineW, top:0, width:bookW, height:bookH,
+        transformOrigin:"left center", transformStyle:"preserve-3d",
+        transform: isOpen ? "rotateY(-155deg)" : "rotateY(0deg)",
+        transition:"transform 1s cubic-bezier(0.4,0,0.2,1)",
+        borderRadius:"3px 8px 8px 3px",
+        boxShadow: isOpen ? "none" : `5px 5px 24px rgba(74,48,104,0.18)` }}>
+        {/* Front face */}
+        <div style={{ position:"absolute", inset:0, background:"#fff0f5", borderRadius:"3px 8px 8px 3px",
+          backfaceVisibility:"hidden", display:"flex", flexDirection:"column",
+          alignItems:"center", justifyContent:"center", padding:isMobile?"14px 10px":"20px 14px", overflow:"hidden" }}>
+          {/* Spine shadow on cover */}
+          <div style={{ position:"absolute", left:0, top:0, bottom:0, width:14,
+            background:"linear-gradient(to right,rgba(200,160,180,0.5),transparent)", borderRadius:"3px 0 0 3px" }} />
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?18:22, fontWeight:700,
+            color:"#c0506a", textAlign:"center", lineHeight:1.2, marginBottom:8 }}>
+            A Year<br/>to<br/>Remember
+          </div>
+          <div style={{ fontSize:isMobile?7:8, letterSpacing:3, textTransform:"uppercase", color:"#c0506a", opacity:0.5, marginBottom:12 }}>
+            {t("Photo Album","ألبوم صور")}
+          </div>
+          {/* Rose SVG */}
+          <svg width={isMobile?70:90} height={isMobile?70:90} viewBox="0 0 90 90" fill="none">
+            <circle cx="45" cy="45" r="22" fill="#f4a0b8" opacity="0.25"/>
+            <ellipse cx="45" cy="35" rx="9" ry="12" fill="#e87898" opacity="0.85"/>
+            <ellipse cx="35" cy="44" rx="9" ry="12" fill="#d45878" opacity="0.7" transform="rotate(-30 35 44)"/>
+            <ellipse cx="55" cy="44" rx="9" ry="12" fill="#e87898" opacity="0.7" transform="rotate(30 55 44)"/>
+            <ellipse cx="45" cy="55" rx="9" ry="12" fill="#f09ab4" opacity="0.85"/>
+            <ellipse cx="45" cy="45" rx="7" ry="7" fill="#c04068"/>
+            <ellipse cx="30" cy="64" rx="6" ry="10" fill="#88b878" opacity="0.65" transform="rotate(-20 30 64)"/>
+            <ellipse cx="60" cy="64" rx="6" ry="10" fill="#68a858" opacity="0.65" transform="rotate(20 60 64)"/>
+          </svg>
+        </div>
+        {/* Back face */}
+        <div style={{ position:"absolute", inset:0, background:"#f8e8ef", borderRadius:"3px 8px 8px 3px",
+          backfaceVisibility:"hidden", transform:"rotateY(180deg)",
+          display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ fontSize:9, letterSpacing:3, textTransform:"uppercase", color:"#c0506a", opacity:0.4, fontFamily:"'Playfair Display',serif" }}>
+            Miora by Layal
+          </div>
+        </div>
+      </div>
+
+      {/* Tap hint */}
+      <div style={{ position:"absolute", bottom:-24, left:0, right:0, textAlign:"center",
+        fontSize:10, color:DEEP_PURPLE, opacity:0.3, letterSpacing:1, textTransform:"uppercase" }}>
+        {isOpen ? t("tap to close","اضغط للإغلاق") : t("tap to open","اضغط للفتح")}
+      </div>
     </div>
   );
 }
@@ -584,18 +779,29 @@ function HeroBtn({ label, primary, onClick }) {
     </button>
   );
 }
-function CreateOptionCard({ icon, title, desc, onClick, gradient, badge }) {
+function CreateOptionCard({ icon, title, desc, onClick, gradient, badge, isMobile }) {
   return (
-    <div onClick={onClick} style={{ flex:"1 1 260px", maxWidth:300, background:gradient||"white",
-      borderRadius:20, padding:32, cursor:"pointer", border:`1px solid ${PASTEL_PURPLE}20`,
-      position:"relative", transition:"all 0.3s ease", textAlign:"center", boxShadow:`0 2px 16px ${PASTEL_PURPLE}08` }}
-      onMouseEnter={e => { e.currentTarget.style.transform="translateY(-6px)"; e.currentTarget.style.boxShadow=`0 12px 32px ${PASTEL_PURPLE}20`; }}
-      onMouseLeave={e => { e.currentTarget.style.transform="translateY(0)";    e.currentTarget.style.boxShadow=`0 2px 16px ${PASTEL_PURPLE}08`; }}>
+    <div onClick={onClick} style={{ flex: isMobile ? "none" : "1 1 260px",
+      width: isMobile ? "100%" : undefined, maxWidth: isMobile ? "100%" : 300,
+      background:gradient||"white",
+      borderRadius:16, padding: isMobile ? "16px 20px" : 32, cursor:"pointer",
+      border:`1px solid ${PASTEL_PURPLE}20`, position:"relative",
+      transition:"all 0.3s ease",
+      display: isMobile ? "flex" : "block",
+      alignItems: isMobile ? "center" : undefined,
+      gap: isMobile ? 16 : undefined,
+      textAlign: isMobile ? "left" : "center",
+      boxShadow:`0 2px 16px ${PASTEL_PURPLE}08` }}
+      onMouseEnter={e => { if(!isMobile){e.currentTarget.style.transform="translateY(-6px)";e.currentTarget.style.boxShadow=`0 12px 32px ${PASTEL_PURPLE}20`;} }}
+      onMouseLeave={e => { if(!isMobile){e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 2px 16px ${PASTEL_PURPLE}08`;} }}>
       {badge && <div style={{ position:"absolute", top:12, right:12, background:GOLD_ACCENT, color:"white", fontSize:10, fontWeight:700, padding:"4px 10px", borderRadius:10 }}>{badge}</div>}
-      <div style={{ fontSize:40, marginBottom:16 }}>{icon}</div>
-      <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:DARK_PURPLE, marginBottom:12 }}>{title}</h3>
-      <p style={{ fontSize:13, lineHeight:1.6, color:DARK_PURPLE, opacity:0.6 }}>{desc}</p>
-      <div style={{ marginTop:20, fontSize:13, fontWeight:700, color:DEEP_PURPLE }}>→</div>
+      <div style={{ fontSize: isMobile ? 32 : 40, marginBottom: isMobile ? 0 : 16, flexShrink:0 }}>{icon}</div>
+      <div style={{ flex:1 }}>
+        <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 16 : 18, color:DARK_PURPLE, marginBottom: isMobile ? 4 : 12 }}>{title}</h3>
+        <p style={{ fontSize: isMobile ? 12 : 13, lineHeight:1.6, color:DARK_PURPLE, opacity:0.6 }}>{desc}</p>
+      </div>
+      {!isMobile && <div style={{ marginTop:20, fontSize:13, fontWeight:700, color:DEEP_PURPLE }}>→</div>}
+      {isMobile && <div style={{ fontSize:18, color:DEEP_PURPLE, flexShrink:0 }}>›</div>}
     </div>
   );
 }
@@ -1019,7 +1225,7 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
 
 // ─── Book Editor View ─────────────────────────────────────────────────────────
 // The full canvas editor: images, stickers, text, multi-page, auto-save
-function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
+function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL, isMobile }) {
   // ── Local state (mirrors project, synced to parent on save) ──────────────
   const [pages,       setPages]       = useState(() => project.pages && project.pages.length ? project.pages : [{ id:generateId(), background:"#ffffff", elements:[] }]);
   const [currentPage, setCurrentPage] = useState(0);
@@ -1037,6 +1243,10 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
   const [exporting,   setExporting]   = useState(false);  // PDF export in progress
   const [exported,    setExported]    = useState(false);  // PDF just downloaded
   const pageExportRefs = useRef([]);  // array of DOM refs for each page, used by html2canvas
+
+  // Mobile-specific state
+  const [mobilePanel, setMobilePanel] = useState(null); // null | "stickers" | "fonts" | "pages" | "backgrounds"
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const canvasRef = useRef(null);
   const fileRef   = useRef(null);
   const autoSaveTimer = useRef(null);
@@ -1310,6 +1520,353 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL }) {
     template: { color:"#1a5276",   icon:"📋", label:t("Template Editor","محرر القوالب") },
   };
   const mc = modeConfig[mode] || modeConfig.manual;
+
+  // ── Mobile canvas: single page, full-screen, bottom toolbar ───────────────
+  if (isMobile) {
+    const mobilePage = pages[currentPage] || pages[0];
+    const mobilePageIdx = currentPage;
+    const CANVAS_W = Math.min(window.innerWidth - 32, 360);
+    const CANVAS_H = Math.round(CANVAS_W * 1.3);
+
+    const openPanel = (panel) => {
+      setMobilePanel(panel);
+      setMobilePanelOpen(true);
+    };
+    const closePanel = () => setMobilePanelOpen(false);
+
+    return (
+      <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", display:"flex", flexDirection:"column",
+        fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:"#f4f0fb",
+        userSelect:"none", position:"relative" }}>
+        <link href={FONT_LINK} rel="stylesheet" />
+
+        {/* Mobile top bar */}
+        <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}15`, padding:"10px 16px",
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          position:"sticky", top:0, zIndex:60 }}>
+          <button onClick={() => { doSave(); onBack(); }} style={{ background:"none", border:"none", color:DEEP_PURPLE,
+            cursor:"pointer", fontSize:13, fontWeight:700, fontFamily:"'Quicksand',sans-serif",
+            display:"flex", alignItems:"center", gap:6, padding:"4px 0" }}>
+            ← {t("Exit","خروج")}
+          </button>
+          <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t("Title...","العنوان...")}
+            style={{ border:"none", borderBottom:`1px solid ${PASTEL_PURPLE}30`, outline:"none",
+              fontSize:13, fontWeight:600, color:DARK_PURPLE, background:"transparent",
+              width:120, textAlign:"center", fontFamily:"'Quicksand',sans-serif", padding:"2px 4px" }} />
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            {lastSaved && <div style={{ width:7, height:7, borderRadius:"50%", background:"#27ae60" }} />}
+            <button onClick={doSave} style={{ background:`${PASTEL_PURPLE}20`, border:`1px solid ${PASTEL_PURPLE}40`,
+              borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:DEEP_PURPLE,
+              cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+              💾
+            </button>
+          </div>
+        </div>
+
+        {/* Spread/single selector + page nav */}
+        <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}10`,
+          padding:"8px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:11, color:DEEP_PURPLE, fontWeight:700, opacity:0.6 }}>
+            {mc.icon} {mc.label}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <button onClick={() => { setCurrentPage(p=>Math.max(0,p-1)); setSelected(null); }}
+              disabled={currentPage===0}
+              style={{ background:`${PASTEL_PURPLE}15`, border:"none", borderRadius:6, padding:"4px 10px",
+                fontSize:13, color:DEEP_PURPLE, cursor:currentPage===0?"not-allowed":"pointer", opacity:currentPage===0?0.3:1 }}>‹</button>
+            <span style={{ fontSize:12, fontWeight:600, color:DARK_PURPLE }}>{currentPage+1}/{pages.length}</span>
+            <button onClick={() => { setCurrentPage(p=>Math.min(pages.length-1,p+1)); setSelected(null); }}
+              disabled={currentPage>=pages.length-1}
+              style={{ background:`${PASTEL_PURPLE}15`, border:"none", borderRadius:6, padding:"4px 10px",
+                fontSize:13, color:DEEP_PURPLE, cursor:currentPage>=pages.length-1?"not-allowed":"pointer", opacity:currentPage>=pages.length-1?0.3:1 }}>›</button>
+            <button onClick={addPage} style={{ background:`${PASTEL_PURPLE}15`, border:`1px dashed ${PASTEL_PURPLE}40`,
+              borderRadius:6, padding:"4px 10px", fontSize:11, color:DEEP_PURPLE, cursor:"pointer" }}>+</button>
+          </div>
+        </div>
+
+        {/* Canvas area */}
+        <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center",
+          padding:"16px 16px 120px", overflowY:"auto", background:"#f4f0fb" }}>
+          <div onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
+            onClick={e => { if(e.target.dataset.canvas) setSelected(null); }}
+            style={{ width:CANVAS_W, height:CANVAS_H, background:mobilePage.background||"#ffffff",
+              borderRadius:6, position:"relative", overflow:"hidden",
+              boxShadow:"0 6px 24px rgba(0,0,0,0.10)" }}
+            data-canvas="true">
+
+            {(mobilePage.elements||[]).map(el => (
+              <div key={el.id}
+                onMouseDown={e => onMouseDownEl(e, el.id)}
+                onTouchStart={e => {
+                  e.stopPropagation();
+                  setSelected(el.id);
+                  const touch = e.touches[0];
+                  setDragging({ elId:el.id, startX:touch.clientX, startY:touch.clientY, origX:el.x, origY:el.y });
+                }}
+                onTouchMove={e => {
+                  if (!dragging || dragging.elId !== el.id) return;
+                  const touch = e.touches[0];
+                  const dx = touch.clientX - dragging.startX;
+                  const dy = touch.clientY - dragging.startY;
+                  updateElement(el.id, { x:dragging.origX+dx, y:dragging.origY+dy });
+                }}
+                onTouchEnd={() => setDragging(null)}
+                style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
+                  transform:`rotate(${el.rotation||0}deg)`, userSelect:"none",
+                  outline: selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
+                  outlineOffset:2, touchAction:"none" }}>
+
+                {el.type==="image" && (
+                  <img src={el.src} alt="" draggable={false}
+                    style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />
+                )}
+                {el.type==="sticker" && (
+                  <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>
+                    {el.content}
+                  </div>
+                )}
+                {el.type==="text" && (
+                  selected===el.id ? (
+                    <textarea autoFocus value={el.content}
+                      onChange={e => updateElement(el.id,{content:e.target.value})}
+                      onMouseDown={e => e.stopPropagation()}
+                      style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
+                        fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                        color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                        cursor:"text", textAlign:"center", padding:4 }} />
+                  ) : (
+                    <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
+                      fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
+                      color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
+                      textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
+                      {el.content}
+                    </div>
+                  )
+                )}
+                {selected===el.id && (
+                  <div onMouseDown={e => onResizeMouseDown(e, el.id)}
+                    style={{ position:"absolute", right:-6, bottom:-6, width:16, height:16, borderRadius:"50%",
+                      background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
+                )}
+              </div>
+            ))}
+
+            {(mobilePage.elements||[]).length === 0 && (
+              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
+                alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                <div style={{ fontSize:28, marginBottom:8, opacity:0.15 }}>📷</div>
+                <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.2, textAlign:"center", padding:"0 24px" }}>
+                  {t("Tap 📷 below to add a photo","اضغط 📷 أدناه لإضافة صورة")}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Selected element quick actions */}
+        {selEl && (
+          <div style={{ position:"fixed", bottom:80, left:16, right:16, zIndex:55,
+            background:"white", borderRadius:16, padding:"12px 16px",
+            boxShadow:"0 -4px 20px rgba(74,48,104,0.12)",
+            display:"flex", gap:8, alignItems:"center", overflowX:"auto" }}>
+            {selEl.type==="text" && (
+              <>
+                <input type="number" value={selEl.fontSize||18} min={8} max={80}
+                  onChange={e => updateElement(selEl.id,{fontSize:parseInt(e.target.value)||18})}
+                  style={{ width:48, padding:"4px 6px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:12, color:DARK_PURPLE }} />
+                <input type="color" value={selEl.color||"#4A3068"}
+                  onChange={e => updateElement(selEl.id,{color:e.target.value})}
+                  style={{ width:28, height:28, border:"none", borderRadius:6, cursor:"pointer" }} />
+                <button onClick={() => updateElement(selEl.id,{bold:!selEl.bold})}
+                  style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${selEl.bold?DEEP_PURPLE:PASTEL_PURPLE}30`,
+                    background:selEl.bold?`${PASTEL_PURPLE}20`:"transparent", fontSize:13, fontWeight:"bold", color:DEEP_PURPLE, cursor:"pointer" }}>B</button>
+              </>
+            )}
+            <button onClick={() => bringForward(selEl.id)}
+              style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}20`, fontSize:13, color:DARK_PURPLE, cursor:"pointer", background:"transparent" }}>↑</button>
+            <button onClick={() => sendBackward(selEl.id)}
+              style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}20`, fontSize:13, color:DARK_PURPLE, cursor:"pointer", background:"transparent" }}>↓</button>
+            <button onClick={() => removeElement(selEl.id)}
+              style={{ marginLeft:"auto", padding:"4px 12px", borderRadius:8, border:"none",
+                background:"#fdf0ef", color:"#e74c3c", fontSize:12, fontWeight:700, cursor:"pointer" }}>🗑️</button>
+          </div>
+        )}
+
+        {/* Mobile bottom toolbar */}
+        <div style={{ position:"fixed", bottom:0, left:0, right:0, zIndex:60,
+          background:"white", borderTop:`1px solid ${PASTEL_PURPLE}15`,
+          padding:"10px 12px", paddingBottom:"max(10px, env(safe-area-inset-bottom))",
+          display:"flex", gap:6, justifyContent:"space-around", alignItems:"center" }}>
+
+          {/* Add Photo */}
+          <label style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            cursor:"pointer", flex:1, padding:"4px 0" }}>
+            <span style={{ fontSize:22 }}>📷</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Photo","صورة")}</span>
+            <input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display:"none" }} />
+          </label>
+
+          {/* Add Text */}
+          <button onClick={addText} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
+            <span style={{ fontSize:22 }}>✏️</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Text","نص")}</span>
+          </button>
+
+          {/* Stickers */}
+          <button onClick={() => openPanel("stickers")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
+            <span style={{ fontSize:22 }}>🎨</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Stickers","ملصقات")}</span>
+          </button>
+
+          {/* Background */}
+          <button onClick={() => openPanel("backgrounds")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
+            <span style={{ fontSize:22 }}>🎨</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("BG","خلفية")}</span>
+          </button>
+
+          {/* Font */}
+          <button onClick={() => openPanel("fonts")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
+            <span style={{ fontSize:22, fontFamily:"'Playfair Display',serif", fontWeight:"bold", lineHeight:1 }}>Aa</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Font","خط")}</span>
+          </button>
+
+          {/* PDF */}
+          <button onClick={handleExportPDF} disabled={exporting} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            flex:1, border:"none", background:"transparent", cursor:exporting?"not-allowed":"pointer", padding:"4px 0", opacity:exporting?0.5:1 }}>
+            <span style={{ fontSize:22 }}>📄</span>
+            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{exporting?t("...","..."):"PDF"}</span>
+          </button>
+        </div>
+
+        {/* Slide-up panel overlay */}
+        {mobilePanelOpen && (
+          <div style={{ position:"fixed", inset:0, zIndex:70, animation:"overlayIn 0.2s ease" }}
+            onClick={closePanel}>
+            <div style={{ position:"absolute", inset:0, background:"rgba(74,48,104,0.3)" }} />
+            <div onClick={e=>e.stopPropagation()}
+              style={{ position:"absolute", bottom:0, left:0, right:0,
+                background:"white", borderRadius:"20px 20px 0 0",
+                padding:"0 0 32px", maxHeight:"60vh", overflow:"hidden",
+                animation:"slideUp 0.3s ease", display:"flex", flexDirection:"column" }}>
+
+              {/* Panel handle + close */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"12px 20px 8px" }}>
+                <div style={{ width:36, height:4, borderRadius:2, background:`${PASTEL_PURPLE}60`, margin:"0 auto" }} />
+              </div>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"0 20px 12px",
+                borderBottom:`1px solid ${PASTEL_PURPLE}15` }}>
+                <div style={{ fontSize:14, fontWeight:700, color:DARK_PURPLE }}>
+                  {mobilePanel==="stickers"?t("Stickers","الملصقات"):
+                   mobilePanel==="fonts"?t("Fonts","الخطوط"):
+                   mobilePanel==="backgrounds"?t("Background","الخلفية"):""}
+                </div>
+                <button onClick={closePanel} style={{ background:`${PASTEL_PURPLE}15`, border:"none", borderRadius:10,
+                  padding:"4px 12px", fontSize:12, color:DEEP_PURPLE, cursor:"pointer" }}>✕</button>
+              </div>
+
+              <div style={{ overflowY:"auto", flex:1, padding:"16px 20px" }}>
+                {/* Stickers panel */}
+                {mobilePanel==="stickers" && (
+                  <>
+                    <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:16, paddingBottom:4 }}>
+                      {Object.entries(STICKER_PACKS).map(([key,pack]) => (
+                        <button key={key} onClick={() => setStickerPack(key)}
+                          style={{ whiteSpace:"nowrap", padding:"6px 12px", borderRadius:20, border:"none",
+                            background: stickerPack===key ? DEEP_PURPLE : `${PASTEL_PURPLE}15`,
+                            color: stickerPack===key ? "white" : DARK_PURPLE, fontSize:11, fontWeight:600,
+                            cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                          {pack.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:10 }}>
+                      {STICKER_PACKS[stickerPack]?.items.map((emoji,i) => (
+                        <button key={i} onClick={() => { addSticker(emoji); closePanel(); }}
+                          style={{ fontSize:28, background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}10`,
+                            borderRadius:10, padding:"10px 4px", cursor:"pointer" }}>
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/* Fonts panel */}
+                {mobilePanel==="fonts" && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {FONTS.map(f => (
+                      <div key={f.name}
+                        onClick={() => { if(selEl && selEl.type==="text") { updateElement(selEl.id,{font:f.name}); closePanel(); } else { addText(); } }}
+                        style={{ padding:"12px 14px", borderRadius:12, cursor:"pointer",
+                          background: selEl?.font===f.name ? `${PASTEL_PURPLE}20` : `${SOFT_PINK}15`,
+                          border: selEl?.font===f.name ? `1px solid ${PASTEL_PURPLE}50` : "1px solid transparent" }}>
+                        <div style={{ fontFamily:`'${f.name}',sans-serif`, fontSize:20, color:DARK_PURPLE }}>{f.preview}</div>
+                        <div style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4, marginTop:2 }}>{f.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Backgrounds panel */}
+                {mobilePanel==="backgrounds" && (
+                  <>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:16 }}>
+                      {["#ffffff","#fff8fe","#f5f0ff","#fff5f0","#f0f8ff","#fafaf0","#fff0f5","#f5fff5","#f0f5ff","#fffbf0","#f8f0ff","#fff8f0"].map(clr => (
+                        <div key={clr} onClick={() => { updatePage(mobilePageIdx,{background:clr}); closePanel(); }}
+                          style={{ aspectRatio:"1", borderRadius:10, background:clr, cursor:"pointer",
+                            border: mobilePage.background===clr ? `3px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}20` }} />
+                      ))}
+                    </div>
+                    <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5, marginBottom:8 }}>{t("Custom","مخصص")}</div>
+                    <input type="color" value={mobilePage.background||"#ffffff"}
+                      onChange={e => updatePage(mobilePageIdx,{background:e.target.value})}
+                      style={{ width:"100%", height:44, border:"none", borderRadius:12, cursor:"pointer" }} />
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden pages for PDF export */}
+        <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
+          {pages.map((pg, i) => (
+            <div key={pg.id} ref={el => { pageExportRefs.current[i] = el; }}
+              style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
+              {(pg.elements||[]).map(el => (
+                <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h, transform:`rotate(${el.rotation||0}deg)` }}>
+                  {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
+                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>}
+                  {el.type==="text" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18, color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal", textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>{el.content}</div>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {exported && (
+          <div style={{ position:"fixed", top:70, left:16, right:16, zIndex:80,
+            background:"#27ae60", color:"white", borderRadius:14, padding:"12px 16px",
+            display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+            <span style={{ fontSize:13, fontWeight:600 }}>✅ {t("PDF downloaded!","تم تنزيل PDF!")}</span>
+            <a href={whatsappPDFLink} target="_blank" rel="noopener noreferrer"
+              style={{ background:"white", color:"#27ae60", padding:"6px 12px", borderRadius:10,
+                fontSize:11, fontWeight:700, textDecoration:"none" }}>
+              💬 {t("Send","أرسل")}
+            </a>
+          </div>
+        )}
+
+        <style>{`
+          @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+          @keyframes overlayIn{from{opacity:0}to{opacity:1}}
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", display:"flex", flexDirection:"column",
