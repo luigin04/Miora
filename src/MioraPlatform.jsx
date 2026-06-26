@@ -576,7 +576,7 @@ export default function MioraPlatform() {
         @keyframes floatBook { 0%,100%{transform:translateY(0) rotateX(3deg)} 50%{transform:translateY(-8px) rotateX(3deg)} }
         @keyframes openCover { 0%{transform:rotateY(0deg)} 100%{transform:rotateY(-155deg)} }
         @keyframes revealInner { 0%,70%{opacity:0} 100%{opacity:1} }
-        @keyframes stickerRise { 0%{transform:translateY(60px) rotate(0deg);opacity:0} 15%{opacity:0.85} 85%{opacity:0.85} 100%{transform:translateY(-120px) rotate(360deg);opacity:0} }
+        @keyframes bookFloat { 0%{transform:translateY(0) rotate(var(--tilt,0deg));opacity:0} 8%{opacity:0.7} 92%{opacity:0.7} 100%{transform:translateY(-110vh) rotate(var(--tilt,0deg));opacity:0} }
         @keyframes scrollDot { 0%,100%{opacity:0.3;transform:translateY(0)} 50%{opacity:1;transform:translateY(4px)} }
         @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
         @keyframes overlayIn { from{opacity:0} to{opacity:1} }
@@ -596,7 +596,7 @@ export default function MioraPlatform() {
 }
 
 // ─── Cinematic Hero ───────────────────────────────────────────────────────────
-const HERO_STICKERS = ["🌸","💜","✨","🌹","💕","🌷","💫","🎀","🌺","💖","🌼","⭐"];
+const HERO_STICKERS = []; // kept for reference, replaced by floating books
 
 // Phases:
 //  0  intro     — book fills screen (scale ~2.5), cover closed,  0 → 0.8s
@@ -606,7 +606,7 @@ const HERO_STICKERS = ["🌸","💜","✨","🌹","💕","🌷","💫","🎀","�
 //  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
 function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
   const [phase, setPhase] = useState(0);
-  const [stickerItems, setStickerItems] = useState([]);
+  const [floatingBooks, setFloatingBooks] = useState([]);
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 800);
@@ -616,19 +616,27 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
     return () => [t1,t2,t3,t4].forEach(clearTimeout);
   }, []);
 
-  // Floating stickers — only spawn after reveal
+  // Floating mini books — spawn after reveal, drift upward slowly
   useEffect(() => {
     if (phase < 4) return;
+    let bookIdx = 0;
     const spawn = () => {
       const id = generateId();
-      const s = { id, emoji:HERO_STICKERS[Math.floor(Math.random()*HERO_STICKERS.length)],
-        left:Math.random()*85+"%", size:14+Math.random()*14,
-        duration:4+Math.random()*4, delay:Math.random()*1 };
-      setStickerItems(prev => [...prev.slice(-12), s]);
-      setTimeout(() => setStickerItems(prev => prev.filter(x=>x.id!==id)), (s.duration+s.delay+0.5)*1000);
+      const book = OCCASION_BOOKS[bookIdx % OCCASION_BOOKS.length];
+      bookIdx++;
+      const scale = 0.18 + Math.random() * 0.12; // small — 18–30% of full size
+      const duration = 9 + Math.random() * 8;    // slow drift: 9–17s
+      const delay = Math.random() * 2;
+      const tilt = (Math.random() - 0.5) * 20;  // slight random tilt
+      const left = 5 + Math.random() * 88;       // spread across full width
+      const b = { id, book, scale, duration, delay, tilt, left };
+      setFloatingBooks(prev => [...prev.slice(-10), b]);
+      setTimeout(() => setFloatingBooks(prev => prev.filter(x => x.id !== id)),
+        (duration + delay + 1) * 1000);
     };
-    spawn(); spawn();
-    const iv = setInterval(spawn, 1400);
+    // Stagger initial batch
+    [0,1,2,3].forEach(i => setTimeout(spawn, i * 600));
+    const iv = setInterval(spawn, 3000);
     return () => clearInterval(iv);
   }, [phase]);
 
@@ -668,14 +676,49 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
       background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
-      {/* Floating stickers */}
+      {/* Floating mini book covers — drift upward slowly from the bottom */}
       <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
-        {stickerItems.map(s => (
-          <div key={s.id} style={{ position:"absolute", bottom:0, left:s.left, fontSize:s.size,
-            animation:`stickerRise ${s.duration}s ease ${s.delay}s forwards`, opacity:0 }}>
-            {s.emoji}
-          </div>
-        ))}
+        {floatingBooks.map(b => {
+          const W = 200 * b.scale; // base book cover is 200px wide
+          const H = 280 * b.scale;
+          const SPINE_W = 30 * b.scale;
+          return (
+            <div key={b.id} style={{
+              position:"absolute", bottom:"-10%", left:`${b.left}%`,
+              animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
+              opacity:0, transform:`rotate(${b.tilt}deg)`,
+              display:"flex", filter:"drop-shadow(0 4px 12px rgba(74,48,104,0.15))" }}>
+              {/* Mini spine */}
+              <div style={{ width:SPINE_W, height:H, background:b.book.spineColor,
+                borderRadius:`${3*b.scale}px 0 0 ${3*b.scale}px`,
+                display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
+                  fontSize:Math.max(5, 8*b.scale), fontWeight:700, letterSpacing:1,
+                  textTransform:"uppercase", color:b.book.spineText, opacity:0.8,
+                  fontFamily:"'Quicksand',sans-serif" }}>
+                  {b.book.title}
+                </div>
+              </div>
+              {/* Mini cover */}
+              <div style={{ width:W, height:H, background:b.book.bg,
+                borderRadius:`0 ${3*b.scale}px ${3*b.scale}px 0`,
+                display:"flex", flexDirection:"column", alignItems:"center",
+                justifyContent:"flex-start", padding:`${10*b.scale}px ${8*b.scale}px`,
+                overflow:"hidden" }}>
+                <div style={{ fontFamily:"'Londrina Solid',cursive",
+                  fontSize:Math.max(8, (28 - b.book.title.length * 0.5) * b.scale),
+                  color:b.book.titleColor, textAlign:"center", lineHeight:1,
+                  marginBottom:4*b.scale, width:"100%" }}>
+                  {b.book.title}
+                </div>
+                <div style={{ transform:`scale(${b.scale * 0.85})`, transformOrigin:"top center",
+                  marginTop:-(80*(1-b.scale*0.85)) }}>
+                  {b.book.illustration}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Book */}
