@@ -382,12 +382,12 @@ export default function MioraPlatform() {
           {!isMobile && <a href="#create-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Create","أنشئ")}</a>}
           {projects.length > 0 && (
             <span onClick={() => setCurrentView("my-projects")} style={{ fontSize: isMobile ? 12 : 13, color:DEEP_PURPLE, fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}>
-              {isMobile ? "📁" : t("My Projects","مشاريعي")}
+              {isMobile ? <Icon name="folder" size={18} color={DEEP_PURPLE} /> : t("My Projects","مشاريعي")}
               <span style={{ background:GOLD_ACCENT, color:"white", fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10 }}>{projects.length}</span>
             </span>
           )}
-          <span onClick={() => setCurrentView("my-orders")} style={{ fontSize: isMobile ? 12 : 13, color:DARK_PURPLE, fontWeight:500, opacity:0.7, cursor:"pointer", whiteSpace:"nowrap" }}>
-            {isMobile ? "🧾" : t("Orders","الطلبات")}
+          <span onClick={() => setCurrentView("my-orders")} style={{ fontSize: isMobile ? 12 : 13, color:DARK_PURPLE, fontWeight:500, opacity:0.7, cursor:"pointer", whiteSpace:"nowrap", display:"flex", alignItems:"center", gap:4 }}>
+            {isMobile ? <Icon name="receipt" size={18} color={DARK_PURPLE} /> : t("Orders","الطلبات")}
           </span>
           {!isMobile && <a href="#pricing-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Pricing","الأسعار")}</a>}
           {!isMobile && <a href="#reviews-section" style={{ fontSize:13, color:DARK_PURPLE, textDecoration:"none", fontWeight:500, opacity:0.7 }}>{t("Reviews","التقييمات")}</a>}
@@ -414,15 +414,15 @@ export default function MioraPlatform() {
       <section id="create-section" style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:`linear-gradient(180deg,${WARM_WHITE},${SOFT_PINK}30)`, textAlign:"center" }}>
         <SectionTitle title={t("Create Your Album","أنشئ ألبومك")} subtitle={t("Choose how you'd like to build your photo book","اختر الطريقة التي تفضلها")} />
         <div style={{ display:"flex", flexDirection: isMobile ? "column" : "row", flexWrap:"wrap", justifyContent:"center", gap: isMobile ? 14 : 24, maxWidth:1000, margin:"0 auto" }}>
-          <CreateOptionCard icon="✏️" title={t("Design Your Own","صمم بنفسك")}
+          <CreateOptionCard icon={<Icon name="edit" size={36} color={DEEP_PURPLE} />} title={t("Design Your Own","صمم بنفسك")}
             desc={t("Drag & drop photos, add stickers, text and decorations. Full creative control.","اسحب وأفلت صورك، أضف ملصقات ونصوص. تحكم إبداعي كامل.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-manual"); }}
             gradient={`linear-gradient(135deg,${PASTEL_PURPLE}20,${SOFT_PINK}40)`} isMobile={isMobile} />
-          <CreateOptionCard icon="🤖" title={t("AI-Powered Design","تصميم بالذكاء الاصطناعي")}
+          <CreateOptionCard icon={<Icon name="ai" size={36} color={DEEP_PURPLE} />} title={t("AI-Powered Design","تصميم بالذكاء الاصطناعي")}
             desc={t("Upload your photos and let our AI create a stunning layout automatically.","ارفع صورك ودع الذكاء الاصطناعي يصمم تخطيطاً مذهلاً تلقائياً.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-ai"); }}
             gradient={`linear-gradient(135deg,#E8D5FF30,${PASTEL_PURPLE}25)`} badge={t("Popular","الأكثر طلباً")} isMobile={isMobile} />
-          <CreateOptionCard icon="📋" title={t("Use a Template","استخدم قالباً")}
+          <CreateOptionCard icon={<Icon name="template" size={36} color={DEEP_PURPLE} />} title={t("Use a Template","استخدم قالباً")}
             desc={t("Browse pre-designed album templates by Layal. Drop your photos into a ready-made layout.","تصفح قوالب مصممة مسبقاً من ليال. أضف صورك إلى التخطيط الجاهز.")}
             onClick={() => { setActiveProjectId(null); setCurrentView("editor-template"); }}
             gradient={`linear-gradient(135deg,#FFE8F020,#F5E6FF30)`} isMobile={isMobile} />
@@ -434,15 +434,15 @@ export default function MioraPlatform() {
         <SectionTitle title={t("How It Works","كيف يعمل")} subtitle={t("From photos to a printed album in 4 simple steps","من الصور إلى ألبوم مطبوع في 4 خطوات")} />
         <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:32, maxWidth:900, margin:"0 auto" }}>
           {[
-            { step:1, icon:"📸", title:t("Upload Photos","ارفع الصور"),      desc:t("Select your favorite photos","اختر صورك المفضلة") },
-            { step:2, icon:"🎨", title:t("Design Album","صمم الألبوم"),      desc:t("Create manually, use AI, or pick a template","صمم يدوياً أو استخدم الذكاء الاصطناعي") },
-            { step:3, icon:"💳", title:t("Pay via CliQ","ادفع عبر كليك"),   desc:t("Choose your package and submit payment","اختر الباقة وأرسل الدفع") },
-            { step:4, icon:"📦", title:t("Receive Album","استلم الألبوم"),   desc:t("We print and deliver your album","نطبع ونوصل ألبومك الجميل") },
+            { step:1, icon:<Icon name="image" size={28} color={DEEP_PURPLE} />, title:t("Upload Photos","ارفع الصور"), desc:t("Select your favorite photos","اختر صورك المفضلة") },
+            { step:2, icon:<Icon name="edit" size={28} color={DEEP_PURPLE} />, title:t("Design Album","صمم الألبوم"), desc:t("Create manually, use AI, or pick a template","صمم يدوياً أو استخدم الذكاء الاصطناعي") },
+            { step:3, icon:<Icon name="creditcard" size={28} color={DEEP_PURPLE} />, title:t("Pay via CliQ","ادفع عبر كليك"), desc:t("Choose your package and submit payment","اختر الباقة وأرسل الدفع") },
+            { step:4, icon:<Icon name="package" size={28} color={DEEP_PURPLE} />, title:t("Receive Album","استلم الألبوم"), desc:t("We print and deliver your album","نطبع ونوصل ألبومك الجميل") },
           ].map(s => (
             <div key={s.step} style={{ flex:"1 1 180px", maxWidth:200 }}>
               <div style={{ width:72, height:72, borderRadius:"50%", margin:"0 auto 16px",
                 background:`linear-gradient(135deg,${PASTEL_PURPLE}30,${SOFT_PINK})`,
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, border:`2px solid ${PASTEL_PURPLE}40` }}>
+                display:"flex", alignItems:"center", justifyContent:"center", border:`1.5px solid ${PASTEL_PURPLE}30` }}>
                 {s.icon}
               </div>
               <div style={{ fontSize:11, color:DEEP_PURPLE, fontWeight:700, opacity:0.5, marginBottom:4 }}>{t("Step","خطوة")} {s.step}</div>
@@ -545,7 +545,7 @@ export default function MioraPlatform() {
         ) : (
           <div style={{ maxWidth:400, margin:"0 auto", background:`linear-gradient(135deg,${SOFT_PINK},white)`,
             borderRadius:20, padding:40, textAlign:"center", border:`1px solid ${PASTEL_PURPLE}25` }}>
-            <div style={{ fontSize:48, marginBottom:12 }}>💜</div>
+            <div style={{ marginBottom:12 }}><Icon name="heart" size={48} color={DEEP_PURPLE} strokeWidth={1} /></div>
             <div style={{ fontSize:18, fontWeight:700, color:DEEP_PURPLE, marginBottom:8 }}>{t("Thank you!","شكراً لك!")}</div>
             <div style={{ fontSize:14, color:DARK_PURPLE, opacity:0.6 }}>{t("Your review has been saved.","تم حفظ تقييمك.")}</div>
           </div>
@@ -558,8 +558,14 @@ export default function MioraPlatform() {
         <div style={{ fontSize:12, opacity:0.5, marginBottom:16 }}>by Layal</div>
         <div style={{ fontSize:13, opacity:0.4, marginBottom:8 }}>{t("Amman, Jordan","عمّان، الأردن")} · {t("All rights reserved","جميع الحقوق محفوظة")} © 2026</div>
         <div style={{ display:"flex", justifyContent:"center", gap:20, marginTop:16, flexWrap:"wrap" }}>
-          <a href="https://instagram.com/miorabylayal" target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>Instagram</a>
-          <a href={`https://wa.me/${LAYAL_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7 }}>WhatsApp</a>
+          <a href="https://instagram.com/miorabylayal" target="_blank" rel="noopener noreferrer"
+            style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7, display:"flex", alignItems:"center", gap:6 }}>
+            <Icon name="instagram" size={16} color={PASTEL_PURPLE} /> Instagram
+          </a>
+          <a href={`https://wa.me/${LAYAL_WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer"
+            style={{ color:PASTEL_PURPLE, fontSize:13, textDecoration:"none", opacity:0.7, display:"flex", alignItems:"center", gap:6 }}>
+            <Icon name="whatsapp" size={16} color={PASTEL_PURPLE} /> WhatsApp
+          </a>
           <span onClick={() => { window.location.hash = "admin"; setCurrentView("admin"); }} style={{ color:PASTEL_PURPLE, fontSize:13, opacity:0.35, cursor:"pointer" }}>{t("Admin","الإدارة")}</span>
         </div>
         <div style={{ marginTop:16, fontSize:11, opacity:0.25 }}>{t("Projects auto-saved to this device","المشاريع محفوظة تلقائياً على هذا الجهاز")}</div>
@@ -1178,6 +1184,42 @@ function OccasionBooksShowcase({ isMobile, t }) {
   );
 }
 
+// ─── Clean SVG Icons (replaces all emojis on the marketing site) ─────────────
+const Icon = ({ name, size=20, color="currentColor", strokeWidth=1.5 }) => {
+  const s = { width:size, height:size, display:"inline-block", verticalAlign:"middle", flexShrink:0 };
+  const p = { stroke:color, strokeWidth, strokeLinecap:"round", strokeLinejoin:"round", fill:"none" };
+  const icons = {
+    camera:    <svg style={s} viewBox="0 0 24 24"><path {...p} d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle {...p} cx="12" cy="13" r="4"/></svg>,
+    palette:   <svg style={s} viewBox="0 0 24 24"><path {...p} d="M12 2C6.48 2 2 6.48 2 12c0 5.52 4.48 10 10 10 1.1 0 2-.9 2-2 0-.53-.2-1-.53-1.36-.32-.36-.5-.83-.5-1.31 0-1.1.9-2 2-2h2.36C19.73 15.33 22 13.8 22 12c0-5.52-4.48-10-10-10z"/><circle cx="6.5" cy="11.5" r="1.5" fill={color} stroke="none"/><circle cx="9.5" cy="7.5" r="1.5" fill={color} stroke="none"/><circle cx="14.5" cy="7.5" r="1.5" fill={color} stroke="none"/><circle cx="17.5" cy="11.5" r="1.5" fill={color} stroke="none"/></svg>,
+    creditcard:<svg style={s} viewBox="0 0 24 24"><rect {...p} x="1" y="4" width="22" height="16" rx="2"/><line {...p} x1="1" y1="10" x2="23" y2="10"/></svg>,
+    package:   <svg style={s} viewBox="0 0 24 24"><path {...p} d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline {...p} points="3.27 6.96 12 12.01 20.73 6.96"/><line {...p} x1="12" y1="22.08" x2="12" y2="12"/></svg>,
+    edit:      <svg style={s} viewBox="0 0 24 24"><path {...p} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path {...p} d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+    sparkles:  <svg style={s} viewBox="0 0 24 24"><path {...p} d="M12 3L9.5 9.5 3 12l6.5 2.5L12 21l2.5-6.5L21 12l-6.5-2.5L12 3z"/></svg>,
+    template:  <svg style={s} viewBox="0 0 24 24"><rect {...p} x="3" y="3" width="18" height="18" rx="2"/><path {...p} d="M3 9h18M9 21V9"/></svg>,
+    folder:    <svg style={s} viewBox="0 0 24 24"><path {...p} d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
+    receipt:   <svg style={s} viewBox="0 0 24 24"><path {...p} d="M4 2v20l3-2 2 2 3-2 2 2 3-2 3 2V2l-3 2-2-2-3 2-2-2-3 2-2-2z"/><line {...p} x1="9" y1="9" x2="15" y2="9"/><line {...p} x1="9" y1="13" x2="15" y2="13"/></svg>,
+    heart:     <svg style={s} viewBox="0 0 24 24"><path {...p} d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>,
+    check:     <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="20 6 9 17 4 12"/></svg>,
+    upload:    <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="16 16 12 12 8 16"/><line {...p} x1="12" y1="12" x2="12" y2="21"/><path {...p} d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>,
+    save:      <svg style={s} viewBox="0 0 24 24"><path {...p} d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline {...p} points="17 21 17 13 7 13 7 21"/><polyline {...p} points="7 3 7 8 15 8"/></svg>,
+    trash:     <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="3 6 5 6 21 6"/><path {...p} d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path {...p} d="M10 11v6M14 11v6"/><path {...p} d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>,
+    layers:    <svg style={s} viewBox="0 0 24 24"><polygon {...p} points="12 2 2 7 12 12 22 7 12 2"/><polyline {...p} points="2 17 12 22 22 17"/><polyline {...p} points="2 12 12 17 22 12"/></svg>,
+    pdf:       <svg style={s} viewBox="0 0 24 24"><path {...p} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline {...p} points="14 2 14 8 20 8"/><line {...p} x1="16" y1="13" x2="8" y2="13"/><line {...p} x1="16" y1="17" x2="8" y2="17"/><polyline {...p} points="10 9 9 9 8 9"/></svg>,
+    order:     <svg style={s} viewBox="0 0 24 24"><circle {...p} cx="9" cy="21" r="1"/><circle {...p} cx="20" cy="21" r="1"/><path {...p} d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>,
+    ai:        <svg style={s} viewBox="0 0 24 24"><path {...p} d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>,
+    instagram: <svg style={s} viewBox="0 0 24 24"><rect {...p} x="2" y="2" width="20" height="20" rx="5"/><circle {...p} cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.2" fill={color} stroke="none"/></svg>,
+    whatsapp:  <svg style={s} viewBox="0 0 24 24"><path {...p} d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>,
+    arrowup:   <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="17 11 12 6 7 11"/><line {...p} x1="12" y1="18" x2="12" y2="6"/></svg>,
+    arrowdown: <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="17 13 12 18 7 13"/><line {...p} x1="12" y1="6" x2="12" y2="18"/></svg>,
+    text:      <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="4 7 4 4 20 4 20 7"/><line {...p} x1="9" y1="20" x2="15" y2="20"/><line {...p} x1="12" y1="4" x2="12" y2="20"/></svg>,
+    image:     <svg style={s} viewBox="0 0 24 24"><rect {...p} x="3" y="3" width="18" height="18" rx="2"/><circle {...p} cx="8.5" cy="8.5" r="1.5"/><polyline {...p} points="21 15 16 10 5 21"/></svg>,
+    sticker:   <svg style={s} viewBox="0 0 24 24"><circle {...p} cx="12" cy="12" r="10"/><path {...p} d="M8 14s1.5 2 4 2 4-2 4-2"/><line {...p} x1="9" y1="9" x2="9.01" y2="9"/><line {...p} x1="15" y1="9" x2="15.01" y2="9"/></svg>,
+    bg:        <svg style={s} viewBox="0 0 24 24"><path {...p} d="M3 3h18v18H3z"/><path {...p} d="M3 9h18M9 3v18"/></svg>,
+    font:      <svg style={s} viewBox="0 0 24 24"><polyline {...p} points="4 7 4 4 20 4 20 7"/><line {...p} x1="9" y1="20" x2="15" y2="20"/><line {...p} x1="12" y1="4" x2="12" y2="20"/></svg>,
+  };
+  return icons[name] || null;
+};
+
 // ─── Small shared components ──────────────────────────────────────────────────
 function SectionTitle({ title, subtitle }) {
   return (
@@ -1248,7 +1290,7 @@ function MyProjectsView({ projects, onBack, onOpen, onDelete, t, lang, isRTL }) 
         <p style={{ textAlign:"center", fontSize:13, color:DARK_PURPLE, opacity:0.5, marginBottom:32 }}>{t("Pick up where you left off.","أكمل من حيث توقفت.")}</p>
         {projects.length === 0 ? (
           <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15` }}>
-            <div style={{ fontSize:48, marginBottom:16 }}>📁</div>
+            <div style={{ marginBottom:16, opacity:0.25 }}><Icon name="folder" size={48} color={DARK_PURPLE} /></div>
             <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No projects yet","لا توجد مشاريع بعد")}</div>
           </div>
         ) : (
@@ -1321,7 +1363,7 @@ function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
           <div style={{ textAlign:"center", padding:40, color:DARK_PURPLE, opacity:0.5, fontSize:14 }}>{t("Loading...","جاري التحميل...")}</div>
         ) : payments.length === 0 ? (
           <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15` }}>
-            <div style={{ fontSize:48, marginBottom:16 }}>🧾</div>
+            <div style={{ marginBottom:16, opacity:0.25 }}><Icon name="receipt" size={48} color={DARK_PURPLE} /></div>
             <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No orders yet","لا توجد طلبات بعد")}</div>
           </div>
         ) : payments.map((pay) => (
@@ -1439,7 +1481,7 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
               onMouseLeave={e => e.currentTarget.style.borderColor=`${PASTEL_PURPLE}50`}>
               {preview ? <img src={preview} alt="proof" style={{ maxWidth:"100%", maxHeight:200, borderRadius:8 }} /> : (
                 <>
-                  <div style={{ fontSize:36, marginBottom:8 }}>📤</div>
+                  <div style={{ marginBottom:8, opacity:0.4 }}><Icon name="upload" size={36} color={DEEP_PURPLE} /></div>
                   <div style={{ fontSize:14, fontWeight:600, color:DEEP_PURPLE }}>{t("Upload Payment Proof","ارفع إثبات الدفع")}</div>
                   <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.4, marginTop:4 }}>{t("Click to select screenshot","اضغط لاختيار الصورة")}</div>
                 </>
@@ -1450,12 +1492,15 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
               <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginBottom:16 }}>{sendError}</p>
             )}
             <button onClick={handleSubmit} disabled={!file || sending || !authUser} style={{ ...primaryBtnStyle, opacity:(file && !sending && authUser)?1:0.5, cursor:(file && !sending && authUser)?"pointer":"not-allowed" }}>
-              {sending ? "⏳ " + t("Submitting...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
+              {sending ? t("Submitting...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
             </button>
           </div>
         ) : (
           <div style={{ background:"white", borderRadius:20, padding:40, textAlign:"center", border:`1px solid ${PASTEL_PURPLE}20` }}>
-            <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
+            <div style={{ marginBottom:16, width:64, height:64, borderRadius:"50%", background:"#e8f8f0",
+              display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px" }}>
+              <Icon name="check" size={32} color="#27ae60" strokeWidth={2.5} />
+            </div>
             <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:DARK_PURPLE, marginBottom:12 }}>
               {t("Payment Proof Submitted!","تم إرسال إثبات الدفع!")}
             </h3>
@@ -1607,7 +1652,7 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                   <img src={pay.proofImage} alt="proof" style={{ width:140, height:140, objectFit:"cover", borderRadius:12, flexShrink:0, cursor:"pointer" }}
                     onClick={() => window.open(pay.proofImage, "_blank")} />
                 ) : (
-                  <div style={{ width:140, height:140, borderRadius:12, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, flexShrink:0 }}>📷</div>
+                  <div style={{ width:140, height:140, borderRadius:12, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><Icon name="image" size={32} color={PASTEL_PURPLE} /></div>
                 )}
                 <div style={{ flex:1, minWidth:200 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:8 }}>
@@ -1986,14 +2031,15 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             {lastSaved && <div style={{ width:7, height:7, borderRadius:"50%", background:"#27ae60" }} />}
             <button onClick={doSave} style={{ background:`${PASTEL_PURPLE}20`, border:`1px solid ${PASTEL_PURPLE}40`,
               borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:DEEP_PURPLE,
-              cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
-              💾
+              cursor:"pointer", fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:4 }}>
+              <Icon name="save" size={14} color={DEEP_PURPLE} />
             </button>
             <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
               background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
               border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700,
-              color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
-              💳 {t("Order","اطلب")}
+              color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
+              display:"flex", alignItems:"center", gap:4 }}>
+              <Icon name="order" size={14} color="white" /> {t("Order","اطلب")}
             </button>
           </div>
         </div>
@@ -2124,7 +2170,10 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
               style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}20`, fontSize:13, color:DARK_PURPLE, cursor:"pointer", background:"transparent" }}>↓</button>
             <button onClick={() => removeElement(selEl.id)}
               style={{ marginLeft:"auto", padding:"4px 12px", borderRadius:8, border:"none",
-                background:"#fdf0ef", color:"#e74c3c", fontSize:12, fontWeight:700, cursor:"pointer" }}>🗑️</button>
+                background:"#fdf0ef", color:"#e74c3c", fontSize:12, fontWeight:700, cursor:"pointer",
+                display:"flex", alignItems:"center", gap:4 }}>
+              <Icon name="trash" size={14} color="#e74c3c" />
+            </button>
           </div>
         )}
 
@@ -2137,7 +2186,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           {/* Add Photo */}
           <label style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             cursor:"pointer", flex:1, padding:"4px 0" }}>
-            <span style={{ fontSize:22 }}>📷</span>
+            <Icon name="image" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Photo","صورة")}</span>
             <input type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display:"none" }} />
           </label>
@@ -2145,35 +2194,35 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           {/* Add Text */}
           <button onClick={addText} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
-            <span style={{ fontSize:22 }}>✏️</span>
+            <Icon name="text" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Text","نص")}</span>
           </button>
 
           {/* Stickers */}
           <button onClick={() => openPanel("stickers")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
-            <span style={{ fontSize:22 }}>🎨</span>
+            <Icon name="sticker" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Stickers","ملصقات")}</span>
           </button>
 
           {/* Background */}
           <button onClick={() => openPanel("backgrounds")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
-            <span style={{ fontSize:22 }}>🎨</span>
+            <Icon name="palette" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("BG","خلفية")}</span>
           </button>
 
           {/* Font */}
           <button onClick={() => openPanel("fonts")} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             flex:1, border:"none", background:"transparent", cursor:"pointer", padding:"4px 0" }}>
-            <span style={{ fontSize:22, fontFamily:"'Playfair Display',serif", fontWeight:"bold", lineHeight:1 }}>Aa</span>
+            <Icon name="font" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Font","خط")}</span>
           </button>
 
           {/* PDF */}
           <button onClick={handleExportPDF} disabled={exporting} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
             flex:1, border:"none", background:"transparent", cursor:exporting?"not-allowed":"pointer", padding:"4px 0", opacity:exporting?0.5:1 }}>
-            <span style={{ fontSize:22 }}>📄</span>
+            <Icon name="pdf" size={22} color={DEEP_PURPLE} />
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{exporting?t("...","..."):"PDF"}</span>
           </button>
         </div>
@@ -2330,22 +2379,23 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             </div>
           )}
           <button onClick={() => { doSave(); }} style={{ background:`${PASTEL_PURPLE}20`, border:`1px solid ${PASTEL_PURPLE}40`,
-            borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
-            💾 {t("Save","احفظ")}
+            borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
+            display:"flex", alignItems:"center", gap:6 }}>
+            <Icon name="save" size={14} color={DEEP_PURPLE} /> {t("Save","احفظ")}
           </button>
           <button onClick={handleExportPDF} disabled={exporting} style={{
             background: exporting ? "#ccc" : `linear-gradient(135deg,${DEEP_PURPLE},${DARK_PURPLE})`,
             border:"none", borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700,
             color:"white", cursor:exporting?"not-allowed":"pointer", fontFamily:"'Quicksand',sans-serif",
-            display:"flex", alignItems:"center", gap:4 }}>
-            {exporting ? "⏳ " + t("Exporting...","جاري التصدير...") : "📄 " + t("Export PDF","تصدير PDF")}
+            display:"flex", alignItems:"center", gap:6 }}>
+            <Icon name="pdf" size={14} color="white" /> {exporting ? t("Exporting...","جاري التصدير...") : t("Export PDF","تصدير PDF")}
           </button>
           <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
             background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
             border:"none", borderRadius:10, padding:"6px 18px", fontSize:12, fontWeight:700,
             color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
             display:"flex", alignItems:"center", gap:6 }}>
-            💳 {t("Order Now","اطلب الآن")}
+            <Icon name="order" size={14} color="white" /> {t("Order Now","اطلب الآن")}
           </button>
         </div>
       </div>
@@ -2517,10 +2567,10 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           {/* Toolbar */}
           <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}10`, padding:"8px 16px",
             display:"flex", gap:8, alignItems:"center", width:"100%", flexWrap:"wrap" }}>
-            <ToolBtn icon="📷" label={t("Add Photo","أضف صورة")} onClick={() => fileRef.current?.click()} />
+            <ToolBtn icon={<Icon name="image" size={16} color={DEEP_PURPLE} />} label={t("Add Photo","أضف صورة")} onClick={() => fileRef.current?.click()} />
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={handleImageUpload} style={{ display:"none" }} />
-            <ToolBtn icon="T" label={t("Add Text","أضف نص")} onClick={addText} active={tool==="text"} />
-            <ToolBtn icon="🎨" label={t("Stickers","ملصقات")} onClick={() => setLeftTab("stickers")} />
+            <ToolBtn icon={<Icon name="text" size={16} color={DEEP_PURPLE} />} label={t("Add Text","أضف نص")} onClick={addText} active={tool==="text"} />
+            <ToolBtn icon={<Icon name="sticker" size={16} color={DEEP_PURPLE} />} label={t("Stickers","ملصقات")} onClick={() => setLeftTab("stickers")} />
 
             <div style={{ width:1, height:28, background:`${PASTEL_PURPLE}30`, margin:"0 4px" }} />
 
@@ -2534,8 +2584,8 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                     <input type="color" value={selEl.color||"#4A3068"}
                       onChange={e => updateElement(selEl.id,{color:e.target.value})}
                       style={{ width:30, height:30, border:"none", borderRadius:6, cursor:"pointer" }} title={t("Text color","لون النص")} />
-                    <ToolBtn icon="B" label="" onClick={() => updateElement(selEl.id,{bold:!selEl.bold})} active={selEl.bold} />
-                    <ToolBtn icon="I" label="" onClick={() => updateElement(selEl.id,{italic:!selEl.italic})} active={selEl.italic} />
+                    <ToolBtn icon={<span style={{fontWeight:700,fontSize:13}}>B</span>} label="" onClick={() => updateElement(selEl.id,{bold:!selEl.bold})} active={selEl.bold} />
+                    <ToolBtn icon={<span style={{fontStyle:"italic",fontSize:13}}>I</span>} label="" onClick={() => updateElement(selEl.id,{italic:!selEl.italic})} active={selEl.italic} />
                     <button onClick={() => setLeftTab("fonts")} style={{ fontSize:11, padding:"4px 10px", borderRadius:8,
                       background:`${PASTEL_PURPLE}15`, border:`1px solid ${PASTEL_PURPLE}30`, color:DEEP_PURPLE,
                       cursor:"pointer", fontFamily:"'Quicksand',sans-serif", fontWeight:600 }}>
@@ -2543,9 +2593,9 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                     </button>
                   </>
                 )}
-                <ToolBtn icon="↑" label={t("Forward","للأمام")} onClick={() => bringForward(selEl.id)} />
-                <ToolBtn icon="↓" label={t("Back","للخلف")} onClick={() => sendBackward(selEl.id)} />
-                <ToolBtn icon="🗑️" label={t("Delete","حذف")} onClick={() => removeElement(selEl.id)} danger />
+                <ToolBtn icon={<Icon name="arrowup" size={16} color={DARK_PURPLE} />} label={t("Forward","للأمام")} onClick={() => bringForward(selEl.id)} />
+                <ToolBtn icon={<Icon name="arrowdown" size={16} color={DARK_PURPLE} />} label={t("Back","للخلف")} onClick={() => sendBackward(selEl.id)} />
+                <ToolBtn icon={<Icon name="trash" size={16} color="#e74c3c" />} label={t("Delete","حذف")} onClick={() => removeElement(selEl.id)} danger />
               </>
             )}
 
@@ -2555,7 +2605,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 background: aiRunning ? "#ccc" : `linear-gradient(135deg,${DEEP_PURPLE},#6c3483)`,
                 color:"white", border:"none", cursor: aiRunning?"not-allowed":"pointer", fontFamily:"'Quicksand',sans-serif",
                 display:"flex", alignItems:"center", gap:6 }}>
-                {aiRunning ? "⏳ "+t("Generating...","جاري التصميم...") : "🤖 "+t("Auto-Arrange","رتّب تلقائياً")}
+                {aiRunning ? t("Generating...","جاري التصميم...") : t("Auto-Arrange","رتّب تلقائياً")}
               </button>
             )}
           </div>
