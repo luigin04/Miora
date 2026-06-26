@@ -381,22 +381,10 @@ export default function MioraPlatform() {
       <CinematicHero isMobile={isMobile} t={t} lang={lang}
         projects={projects} setCurrentView={setCurrentView} />
 
-      {/* Occasions */}
-      <section style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:WARM_WHITE, textAlign:"center" }}>
+      {/* Occasions — Animated Book Showcase */}
+      <section style={{ padding: isMobile ? "56px 0" : "80px 0", background:WARM_WHITE, textAlign:"center", overflow:"hidden" }}>
         <SectionTitle title={t("For Every Occasion","لكل مناسبة")} subtitle={t("Celebrate your milestones with a beautifully crafted album","احتفل بمناسباتك مع ألبوم مصمم بعناية")} />
-        <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap: isMobile ? 10 : 20, maxWidth:800, margin:"0 auto" }}>
-          {OCCASIONS.map((occ,i) => (
-            <div key={i} style={{ background:`linear-gradient(135deg,${SOFT_PINK},white)`, border:`1px solid ${PASTEL_PURPLE}30`,
-              borderRadius:14, padding: isMobile ? "14px 16px" : "20px 28px",
-              minWidth: isMobile ? "calc(25% - 10px)" : 130,
-              transition:"all 0.3s ease", cursor:"pointer", boxShadow:`0 2px 12px ${PASTEL_PURPLE}10` }}
-              onMouseEnter={e => { if(!isMobile){e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow=`0 8px 24px ${PASTEL_PURPLE}25`;} }}
-              onMouseLeave={e => { if(!isMobile){e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow=`0 2px 12px ${PASTEL_PURPLE}10`;} }}>
-              <div style={{ fontSize: isMobile ? 24 : 32, marginBottom:6 }}>{occ.emoji}</div>
-              <div style={{ fontWeight:600, fontSize: isMobile ? 10 : 13, color:DARK_PURPLE }}>{t(occ.name,occ.nameAr)}</div>
-            </div>
-          ))}
-        </div>
+        <OccasionBooksShowcase isMobile={isMobile} t={t} />
       </section>
 
       {/* Create Section */}
@@ -785,6 +773,372 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
         </div>
       </div>
     </section>
+  );
+}
+
+// ─── Occasion Books Showcase ──────────────────────────────────────────────────
+// Styled to match Layal's real books: bold title top, illustration center,
+// thick spine on left, slight 3D perspective tilt — exactly like the screenshots.
+const OCCASION_BOOKS = [
+  {
+    title: "WEDDING",     titleAr: "زفاف",
+    sub: "Our Special Day", subAr: "يومنا المميز",
+    bg: "#fff0f5", titleColor: "#c0506a", spineColor: "#e8c0d0", spineText: "#fff",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        <ellipse cx="55" cy="85" rx="40" ry="8" fill="#f4c0d0" opacity="0.3"/>
+        {/* Rings */}
+        <circle cx="42" cy="58" r="16" stroke="#D4A853" strokeWidth="3.5" fill="none"/>
+        <circle cx="58" cy="58" r="16" stroke="#D4A853" strokeWidth="3.5" fill="none"/>
+        {/* Roses */}
+        <circle cx="30" cy="35" r="10" fill="#e87898" opacity="0.8"/>
+        <circle cx="30" cy="35" r="6" fill="#c04068"/>
+        <circle cx="80" cy="35" r="10" fill="#e87898" opacity="0.8"/>
+        <circle cx="80" cy="35" r="6" fill="#c04068"/>
+        <ellipse cx="55" cy="28" rx="8" ry="10" fill="#e87898" opacity="0.9"/>
+        <ellipse cx="55" cy="28" rx="5" ry="5" fill="#c04068"/>
+        {/* Leaves */}
+        <ellipse cx="20" cy="42" rx="5" ry="9" fill="#88b878" opacity="0.7" transform="rotate(-20 20 42)"/>
+        <ellipse cx="90" cy="42" rx="5" ry="9" fill="#68a858" opacity="0.7" transform="rotate(20 90 42)"/>
+        {/* Bow */}
+        <path d="M45 75 Q55 70 65 75 Q55 80 45 75Z" fill="#f09ab4"/>
+      </svg>
+    ),
+  },
+  {
+    title: "BABY",        titleAr: "استقبال مولود",
+    sub: "New Arrival",   subAr: "مولود جديد",
+    bg: "#f0f8ff", titleColor: "#5b8fc9", spineColor: "#b8d8f0", spineText: "#2a5a8a",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Cloud */}
+        <ellipse cx="55" cy="38" rx="28" ry="16" fill="white" opacity="0.9"/>
+        <circle cx="35" cy="42" r="12" fill="white" opacity="0.9"/>
+        <circle cx="75" cy="42" r="12" fill="white" opacity="0.9"/>
+        {/* Stars */}
+        <text x="25" y="28" fontSize="14" textAnchor="middle" fill="#f4c060">⭐</text>
+        <text x="85" y="28" fontSize="14" textAnchor="middle" fill="#f4c060">⭐</text>
+        {/* Baby bottle */}
+        <rect x="46" y="55" width="18" height="28" rx="5" fill="#b8d8f0"/>
+        <rect x="48" y="52" width="14" height="6" rx="3" fill="#a0c8e8"/>
+        <rect x="51" y="49" width="8" height="5" rx="2" fill="#88b8d8"/>
+        {/* Dots on bottle */}
+        <circle cx="52" cy="63" r="2" fill="white" opacity="0.5"/>
+        <circle cx="58" cy="68" r="2" fill="white" opacity="0.5"/>
+        {/* Duck */}
+        <ellipse cx="30" cy="78" rx="10" ry="7" fill="#f4c060"/>
+        <circle cx="38" cy="72" r="6" fill="#f4c060"/>
+        <ellipse cx="43" cy="73" rx="4" ry="2.5" fill="#e8a030"/>
+        <circle cx="40" cy="71" r="1.2" fill="#333"/>
+        {/* Bear */}
+        <circle cx="82" cy="78" r="9" fill="#d4a878"/>
+        <circle cx="75" cy="72" r="5" fill="#d4a878"/>
+        <circle cx="89" cy="72" r="5" fill="#d4a878"/>
+        <circle cx="82" cy="78" r="5" fill="#c49060"/>
+        <circle cx="80" cy="76" r="1.2" fill="#333"/>
+        <circle cx="84" cy="76" r="1.2" fill="#333"/>
+        <ellipse cx="82" cy="79" rx="2" ry="1.2" fill="#b08050"/>
+      </svg>
+    ),
+  },
+  {
+    title: "BIRTHDAY",    titleAr: "عيد ميلاد",
+    sub: "Celebrate You", subAr: "احتفل بك",
+    bg: "#fff8e0", titleColor: "#b8860b", spineColor: "#f4d060", spineText: "#7a5800",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Balloons */}
+        <ellipse cx="28" cy="45" rx="12" ry="15" fill="#e87898"/>
+        <line x1="28" y1="60" x2="32" y2="85" stroke="#e87898" strokeWidth="1.5"/>
+        <ellipse cx="55" cy="38" rx="14" ry="17" fill="#D8C0FF"/>
+        <line x1="55" y1="55" x2="52" y2="85" stroke="#D8C0FF" strokeWidth="1.5"/>
+        <ellipse cx="82" cy="45" rx="12" ry="15" fill="#88c878"/>
+        <line x1="82" y1="60" x2="78" y2="85" stroke="#88c878" strokeWidth="1.5"/>
+        {/* Cake */}
+        <rect x="35" y="78" width="40" height="24" rx="4" fill="#f4c0d0"/>
+        <rect x="35" y="68" width="40" height="14" rx="4" fill="#fff0f5"/>
+        <ellipse cx="55" cy="68" rx="20" ry="5" fill="#f4c0d0"/>
+        {/* Candles */}
+        <rect x="48" y="58" width="5" height="12" rx="2" fill="#f4d060"/>
+        <rect x="57" y="58" width="5" height="12" rx="2" fill="#88c8f8"/>
+        {/* Flames */}
+        <ellipse cx="50.5" cy="57" rx="3" ry="4" fill="#f4a030" opacity="0.9"/>
+        <ellipse cx="59.5" cy="57" rx="3" ry="4" fill="#f4a030" opacity="0.9"/>
+        {/* Stars */}
+        <text x="20" y="20" fontSize="12" fill="#f4d060">✨</text>
+        <text x="80" y="25" fontSize="12" fill="#f4d060">✨</text>
+      </svg>
+    ),
+  },
+  {
+    title: "GRADUATION",  titleAr: "تخرج",
+    sub: "Achievement",   subAr: "إنجاز",
+    bg: "#f4f0ff", titleColor: "#6040c0", spineColor: "#c0b0f0", spineText: "#fff",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Cap */}
+        <rect x="22" y="45" width="66" height="10" rx="3" fill="#4a3068"/>
+        <polygon points="55,20 20,45 90,45" fill="#4a3068"/>
+        {/* Tassel */}
+        <line x1="90" y1="45" x2="90" y2="72" stroke="#D4A853" strokeWidth="2.5"/>
+        <circle cx="90" cy="74" r="4" fill="#D4A853"/>
+        <line x1="86" y1="74" x2="83" y2="88" stroke="#D4A853" strokeWidth="1.5"/>
+        <line x1="90" y1="74" x2="90" y2="90" stroke="#D4A853" strokeWidth="1.5"/>
+        <line x1="94" y1="74" x2="97" y2="88" stroke="#D4A853" strokeWidth="1.5"/>
+        {/* Diploma scroll */}
+        <rect x="28" y="70" width="52" height="34" rx="4" fill="#fffef0"/>
+        <rect x="28" y="70" width="52" height="6" rx="2" fill="#D4A853" opacity="0.6"/>
+        <rect x="28" y="98" width="52" height="6" rx="2" fill="#D4A853" opacity="0.6"/>
+        <line x1="38" y1="82" x2="72" y2="82" stroke="#4a3068" strokeWidth="1.5" opacity="0.3"/>
+        <line x1="38" y1="88" x2="72" y2="88" stroke="#4a3068" strokeWidth="1.5" opacity="0.3"/>
+        <line x1="38" y1="94" x2="60" y2="94" stroke="#4a3068" strokeWidth="1.5" opacity="0.3"/>
+        {/* Stars */}
+        <text x="15" y="30" fontSize="11" fill="#D4A853">⭐</text>
+        <text x="85" y="35" fontSize="11" fill="#D4A853">⭐</text>
+      </svg>
+    ),
+  },
+  {
+    title: "TRAVEL",      titleAr: "سفر",
+    sub: "Adventures",    subAr: "مغامرات",
+    bg: "#e8f4f0", titleColor: "#1a7a5a", spineColor: "#88c8b0", spineText: "#fff",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Globe */}
+        <circle cx="55" cy="62" r="34" fill="#b8d8f0"/>
+        <circle cx="55" cy="62" r="34" stroke="#5898c8" strokeWidth="1.5" fill="none"/>
+        {/* Continents */}
+        <ellipse cx="42" cy="52" rx="10" ry="14" fill="#88c878" opacity="0.8"/>
+        <ellipse cx="65" cy="55" rx="12" ry="10" fill="#88c878" opacity="0.8"/>
+        <ellipse cx="55" cy="75" rx="8" ry="6" fill="#88c878" opacity="0.7"/>
+        {/* Latitude lines */}
+        <ellipse cx="55" cy="62" rx="34" ry="12" stroke="#5898c8" strokeWidth="0.8" fill="none" opacity="0.4"/>
+        <ellipse cx="55" cy="62" rx="34" ry="24" stroke="#5898c8" strokeWidth="0.8" fill="none" opacity="0.4"/>
+        {/* Plane */}
+        <text x="55" y="32" fontSize="22" textAnchor="middle">✈️</text>
+        {/* Dotted path */}
+        <path d="M 35 44 Q 55 15 75 44" stroke="#D4A853" strokeWidth="1.5" strokeDasharray="4 3" fill="none"/>
+      </svg>
+    ),
+  },
+  {
+    title: "FAMILY",      titleAr: "عائلة",
+    sub: "Our Story",     subAr: "قصتنا",
+    bg: "#fff5e8", titleColor: "#c86020", spineColor: "#f4c090", spineText: "#7a3800",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* House */}
+        <polygon points="55,18 18,48 92,48" fill="#e87040"/>
+        <rect x="22" y="46" width="66" height="52" rx="2" fill="#f4a060"/>
+        {/* Door */}
+        <rect x="44" y="72" width="22" height="26" rx="3" fill="#c86020"/>
+        <circle cx="60" cy="85" r="2" fill="#D4A853"/>
+        {/* Windows */}
+        <rect x="26" y="56" width="16" height="16" rx="2" fill="#b8d8f0"/>
+        <rect x="68" y="56" width="16" height="16" rx="2" fill="#b8d8f0"/>
+        <line x1="34" y1="56" x2="34" y2="72" stroke="white" strokeWidth="1"/>
+        <line x1="26" y1="64" x2="42" y2="64" stroke="white" strokeWidth="1"/>
+        <line x1="76" y1="56" x2="76" y2="72" stroke="white" strokeWidth="1"/>
+        <line x1="68" y1="64" x2="84" y2="64" stroke="white" strokeWidth="1"/>
+        {/* Sun */}
+        <circle cx="88" cy="22" r="10" fill="#f4d060"/>
+        <line x1="88" y1="8" x2="88" y2="4" stroke="#f4d060" strokeWidth="2"/>
+        <line x1="100" y1="22" x2="104" y2="22" stroke="#f4d060" strokeWidth="2"/>
+        <line x1="96" y1="14" x2="99" y2="11" stroke="#f4d060" strokeWidth="2"/>
+        {/* Hearts */}
+        <text x="15" y="35" fontSize="14" fill="#e87898">💕</text>
+      </svg>
+    ),
+  },
+  {
+    title: "ANNIVERSARY", titleAr: "ذكرى سنوية",
+    sub: "Forever Yours", subAr: "إلى الأبد",
+    bg: "#fff0f5", titleColor: "#c0506a", spineColor: "#f4b0c8", spineText: "#fff",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Big heart */}
+        <path d="M55 90 C20 65 10 40 30 28 C40 22 55 32 55 32 C55 32 70 22 80 28 C100 40 90 65 55 90Z" fill="#e87898"/>
+        <path d="M55 80 C30 60 24 44 38 36 C44 32 55 40 55 40 C55 40 66 32 72 36 C86 44 80 60 55 80Z" fill="#f09ab4"/>
+        {/* Arrow */}
+        <line x1="15" y1="55" x2="95" y2="55" stroke="#D4A853" strokeWidth="2.5"/>
+        <polygon points="95,50 105,55 95,60" fill="#D4A853"/>
+        <polygon points="15,50 5,55 15,60" fill="#D4A853"/>
+        {/* Small hearts */}
+        <text x="20" y="30" fontSize="14" fill="#f4c0d0">💕</text>
+        <text x="78" y="28" fontSize="14" fill="#f4c0d0">💕</text>
+        <text x="50" y="16" fontSize="12" fill="#e87898">✨</text>
+      </svg>
+    ),
+  },
+  {
+    title: "ENGAGEMENT",  titleAr: "خطوبة",
+    sub: "Said Yes!",     subAr: "قالت نعم!",
+    bg: "#fdf0ff", titleColor: "#8040b0", spineColor: "#d0a0f0", spineText: "#fff",
+    illustration: (
+      <svg width="110" height="110" viewBox="0 0 110 110" fill="none">
+        {/* Ring box */}
+        <rect x="28" y="60" width="54" height="38" rx="6" fill="#8040b0"/>
+        <rect x="28" y="60" width="54" height="16" rx="6" fill="#6030a0"/>
+        <rect x="35" y="50" width="40" height="14" rx="4" fill="#6030a0"/>
+        {/* Diamond ring */}
+        <circle cx="55" cy="44" r="10" stroke="#D4A853" strokeWidth="3" fill="none"/>
+        <polygon points="55,24 48,34 55,38 62,34" fill="#b8d0f8"/>
+        <polygon points="55,38 48,34 55,46 62,34" fill="#d0e8ff"/>
+        <polygon points="55,24 55,38 62,34" fill="#d0e8ff"/>
+        <polygon points="55,24 55,38 48,34" fill="#a0c0e8"/>
+        {/* Sparkles */}
+        <text x="18" y="36" fontSize="14" fill="#D4A853">✨</text>
+        <text x="80" y="32" fontSize="14" fill="#D4A853">✨</text>
+        <text x="50" y="14" fontSize="11" fill="#D4A853">⭐</text>
+        {/* Velvet interior */}
+        <rect x="34" y="72" width="42" height="18" rx="3" fill="#c070e0" opacity="0.4"/>
+      </svg>
+    ),
+  },
+];
+
+function OccasionBooksShowcase({ isMobile, t }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const [direction, setDirection] = useState(1); // 1=forward, -1=back
+  const timerRef = useRef(null);
+
+  const BW = isMobile ? 130 : 180;
+  const BH = isMobile ? 182 : 252;
+  const SPINE = isMobile ? 22 : 30;
+
+  const goTo = (idx, dir) => {
+    if (animating) return;
+    setAnimating(true);
+    setDirection(dir);
+    setTimeout(() => {
+      setActiveIdx(idx);
+      setAnimating(false);
+    }, 320);
+  };
+
+  const next = () => goTo((activeIdx + 1) % OCCASION_BOOKS.length, 1);
+  const prev = () => goTo((activeIdx - 1 + OCCASION_BOOKS.length) % OCCASION_BOOKS.length, -1);
+
+  // Auto-advance every 3s
+  useEffect(() => {
+    timerRef.current = setInterval(next, 3000);
+    return () => clearInterval(timerRef.current);
+  }, [activeIdx, animating]);
+
+  const resetTimer = () => { clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); };
+
+  const book = OCCASION_BOOKS[activeIdx];
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:0, paddingBottom:48 }}>
+
+      {/* 3D book display */}
+      <div style={{ position:"relative", width:BW+SPINE+60, height:BH+60,
+        display:"flex", alignItems:"center", justifyContent:"center",
+        perspective:1000 }}>
+
+        {/* Shadow */}
+        <div style={{ position:"absolute", bottom:10, left:SPINE+20, width:BW,
+          height:20, background:"rgba(74,48,104,0.12)", borderRadius:"50%", filter:"blur(8px)" }} />
+
+        {/* Animated book wrapper */}
+        <div style={{
+          transform: animating
+            ? `translateX(${direction * 60}px) scale(0.92)`
+            : "translateX(0) scale(1)",
+          opacity: animating ? 0 : 1,
+          transition: animating
+            ? "opacity 0.25s ease, transform 0.25s ease"
+            : "opacity 0.3s ease 0.05s, transform 0.3s ease 0.05s",
+          display:"flex", position:"relative",
+        }}>
+
+          {/* Spine */}
+          <div style={{ width:SPINE, height:BH, background:book.spineColor,
+            borderRadius:"6px 0 0 6px", display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:"inset -4px 0 12px rgba(0,0,0,0.12)",
+            flexShrink:0, position:"relative" }}>
+            <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
+              fontSize:isMobile?8:9, fontWeight:700, letterSpacing:2.5,
+              textTransform:"uppercase", color:book.spineText, opacity:0.85,
+              fontFamily:"'Quicksand',sans-serif" }}>
+              {t(book.title, book.titleAr)}
+            </div>
+          </div>
+
+          {/* Cover */}
+          <div style={{ width:BW, height:BH, background:book.bg,
+            borderRadius:"0 8px 8px 0",
+            boxShadow:"6px 8px 32px rgba(74,48,104,0.18), 2px 2px 8px rgba(74,48,104,0.08)",
+            display:"flex", flexDirection:"column", alignItems:"center",
+            justifyContent:"flex-start", padding: isMobile ? "16px 12px 10px" : "22px 16px 14px",
+            overflow:"hidden", position:"relative",
+            transform:"perspective(800px) rotateY(-8deg)",
+            transformOrigin:"left center" }}>
+
+            {/* Top edge highlight */}
+            <div style={{ position:"absolute", top:0, left:0, right:0, height:3,
+              background:"rgba(255,255,255,0.5)", borderRadius:"0 8px 0 0" }} />
+            {/* Spine edge shadow on cover */}
+            <div style={{ position:"absolute", left:0, top:0, bottom:0, width:12,
+              background:"linear-gradient(to right,rgba(0,0,0,0.08),transparent)" }} />
+
+            {/* Title */}
+            <div style={{ fontFamily:"'Londrina Solid',cursive",
+              fontSize: isMobile ? Math.max(18, 28 - book.title.length * 0.8) : Math.max(24, 40 - book.title.length),
+              color:book.titleColor, textAlign:"center", lineHeight:1.0,
+              letterSpacing:1, marginBottom:isMobile?6:10, zIndex:1, width:"100%" }}>
+              {t(book.title, book.titleAr)}
+            </div>
+
+            {/* Sub */}
+            <div style={{ fontSize:isMobile?8:10, letterSpacing:2.5, textTransform:"uppercase",
+              color:book.titleColor, opacity:0.55, marginBottom:isMobile?8:12, zIndex:1 }}>
+              {t(book.sub, book.subAr)}
+            </div>
+
+            {/* Illustration */}
+            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center",
+              transform: isMobile ? "scale(0.8)" : "scale(1)", transformOrigin:"center" }}>
+              {book.illustration}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div style={{ display:"flex", alignItems:"center", gap:20, marginTop:4 }}>
+        <button onClick={() => { prev(); resetTimer(); }}
+          style={{ width:36, height:36, borderRadius:"50%", border:`1.5px solid ${PASTEL_PURPLE}40`,
+            background:"white", cursor:"pointer", fontSize:16, color:DEEP_PURPLE,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:`0 2px 8px ${PASTEL_PURPLE}15` }}>‹</button>
+
+        {/* Dots */}
+        <div style={{ display:"flex", gap:7 }}>
+          {OCCASION_BOOKS.map((_,i) => (
+            <div key={i} onClick={() => { goTo(i, i > activeIdx ? 1 : -1); resetTimer(); }}
+              style={{ width: i===activeIdx ? 20 : 7, height:7, borderRadius:4,
+                background: i===activeIdx ? DEEP_PURPLE : `${PASTEL_PURPLE}50`,
+                cursor:"pointer", transition:"all 0.3s ease" }} />
+          ))}
+        </div>
+
+        <button onClick={() => { next(); resetTimer(); }}
+          style={{ width:36, height:36, borderRadius:"50%", border:`1.5px solid ${PASTEL_PURPLE}40`,
+            background:"white", cursor:"pointer", fontSize:16, color:DEEP_PURPLE,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:`0 2px 8px ${PASTEL_PURPLE}15` }}>›</button>
+      </div>
+
+      {/* Book label */}
+      <div style={{ marginTop:16, fontSize:isMobile?12:14, color:DARK_PURPLE, opacity:0.5,
+        fontFamily:"'Playfair Display',serif", letterSpacing:1 }}>
+        {t(book.sub, book.subAr)} ·
+        <span style={{ fontStyle:"italic", marginLeft:6 }}>{t("and many more","والمزيد")}</span>
+      </div>
+    </div>
   );
 }
 
