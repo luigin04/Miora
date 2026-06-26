@@ -43,6 +43,19 @@ const PRICING = [
   { pages: "163–178", price: "61–65 JOD" },
 ];
 
+// ─── Auto-detect pricing tier from page count ─────────────────────────────────
+function getPackageFromPageCount(pageCount) {
+  if (pageCount <= 40)  return PRICING[0];   // 30–40
+  if (pageCount <= 55)  return PRICING[1];   // 41–55
+  if (pageCount <= 70)  return PRICING[2];   // 56–70
+  if (pageCount <= 85)  return PRICING[3];   // 71–85
+  if (pageCount <= 100) return PRICING[4];   // 86–100
+  if (pageCount <= 115) return PRICING[5];   // 101–115
+  if (pageCount <= 130) return PRICING[6];   // 116–130
+  if (pageCount <= 146) return PRICING[7];   // 131–146
+  if (pageCount <= 162) return PRICING[8];   // 147–162
+  return PRICING[9];                         // 163–178
+}
 const OCCASIONS = [
   { name: "Wedding",     nameAr: "زفاف",           emoji: "💍" },
   { name: "Baby Shower", nameAr: "استقبال مولود",   emoji: "🍼" },
@@ -312,9 +325,19 @@ export default function MioraPlatform() {
     if (!pid || !projects.find(p => p.id === pid)) pid = createProject(mode);
     const project = projects.find(p => p.id === pid);
     if (!project) return null;
+
+    const handleEditorDone = (updatedPages) => {
+      // Count pages, detect tier, set package, go to payment
+      const pageCount = (updatedPages || project.pages || []).length;
+      const pkg = getPackageFromPageCount(pageCount);
+      setSelectedPackage(pkg);
+      setCurrentView("payment");
+    };
+
     return <BookEditorView mode={mode} project={project}
       onBack={() => { setActiveProjectId(null); setCurrentView("home"); }}
       onUpdate={updates => updateProject(pid, updates)}
+      onDone={handleEditorDone}
       t={t} lang={lang} isRTL={isRTL} isMobile={isMobile} />;
   }
 
@@ -431,26 +454,29 @@ export default function MioraPlatform() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing-section" style={{ padding:"80px 24px", background:`linear-gradient(180deg,${WARM_WHITE},${SOFT_PINK}20)`, textAlign:"center" }}>
-        <SectionTitle title={t("Pricing","الأسعار")} subtitle={t("Choose the perfect size for your album","اختر الحجم المثالي لألبومك")} />
+      <section id="pricing-section" style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:`linear-gradient(180deg,${WARM_WHITE},${SOFT_PINK}20)`, textAlign:"center" }}>
+        <SectionTitle title={t("Pricing","الأسعار")} subtitle={t("Your price is calculated automatically based on your album's page count","يتم احتساب سعرك تلقائياً بناءً على عدد صفحات ألبومك")} />
         <div style={{ maxWidth:700, margin:"0 auto", background:"white", borderRadius:20, overflow:"hidden", border:`1px solid ${PASTEL_PURPLE}25`, boxShadow:`0 4px 24px ${PASTEL_PURPLE}10` }}>
           {PRICING.map((p,i) => (
             <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center",
-              padding:"16px 28px", borderBottom: i<PRICING.length-1 ? `1px solid ${PASTEL_PURPLE}15` : "none",
-              background: i%2===0 ? "transparent" : `${SOFT_PINK}20`, cursor:"pointer", transition:"all 0.2s ease" }}
-              onMouseEnter={e => e.currentTarget.style.background=`${PASTEL_PURPLE}15`}
-              onMouseLeave={e => e.currentTarget.style.background= i%2===0?"transparent":`${SOFT_PINK}20`}
-              onClick={() => { setSelectedPackage(p); setCurrentView("payment"); }}>
+              padding: isMobile ? "12px 20px" : "16px 28px",
+              borderBottom: i<PRICING.length-1 ? `1px solid ${PASTEL_PURPLE}15` : "none",
+              background: i%2===0 ? "transparent" : `${SOFT_PINK}20` }}>
               <div>
-                <span style={{ fontWeight:600, fontSize:15, color:DARK_PURPLE }}>{p.pages}</span>
-                <span style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, marginLeft:8 }}>{t("pages","صفحة")}</span>
+                <span style={{ fontWeight:600, fontSize: isMobile ? 13 : 15, color:DARK_PURPLE }}>{p.pages}</span>
+                <span style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5, marginLeft:8 }}>{t("pages","صفحة")}</span>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <span style={{ fontWeight:700, fontSize:16, color:DEEP_PURPLE }}>{p.price}</span>
-                <span style={{ fontSize:11, background:`${PASTEL_PURPLE}25`, color:DEEP_PURPLE, padding:"4px 10px", borderRadius:12, fontWeight:600 }}>{t("Select","اختر")}</span>
-              </div>
+              <span style={{ fontWeight:700, fontSize: isMobile ? 14 : 16, color:DEEP_PURPLE }}>{p.price}</span>
             </div>
           ))}
+        </div>
+        <p style={{ marginTop:20, fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>
+          {t("Finish designing your album and the right package will be selected for you automatically.",
+             "أنهِ تصميم ألبومك وسيتم اختيار الباقة المناسبة لك تلقائياً.")}
+        </p>
+        <div style={{ marginTop:20 }}>
+          <HeroBtn label={t("Start Designing","ابدأ التصميم")} primary
+            onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
         </div>
       </section>
 
@@ -1383,10 +1409,16 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
       <div style={{ maxWidth:520, margin:"0 auto" }}>
         <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, textAlign:"center", marginBottom:24, color:DARK_PURPLE }}>{t("Complete Your Order","أكمل طلبك")}</h1>
         {selectedPackage && (
-          <div style={{ background:"white", borderRadius:16, padding:24, marginBottom:24, border:`1px solid ${PASTEL_PURPLE}20`, textAlign:"center" }}>
-            <div style={{ fontSize:13, opacity:0.5, marginBottom:4 }}>{t("Selected Package","الباقة المختارة")}</div>
+          <div style={{ background:"white", borderRadius:16, padding:24, marginBottom:24,
+            border:`2px solid ${PASTEL_PURPLE}30`, textAlign:"center" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, marginBottom:8 }}>
+              <span style={{ fontSize:11, background:`${PASTEL_PURPLE}20`, color:DEEP_PURPLE,
+                padding:"3px 10px", borderRadius:10, fontWeight:700, letterSpacing:0.5 }}>
+                ✓ {t("Auto-detected from your album","تم اكتشافه تلقائياً من ألبومك")}
+              </span>
+            </div>
             <div style={{ fontSize:20, fontWeight:700, color:DEEP_PURPLE }}>{selectedPackage.pages} {t("pages","صفحة")}</div>
-            <div style={{ fontSize:24, fontWeight:700, color:GOLD_ACCENT, marginTop:4 }}>{selectedPackage.price}</div>
+            <div style={{ fontSize:28, fontWeight:700, color:GOLD_ACCENT, marginTop:4 }}>{selectedPackage.price}</div>
           </div>
         )}
         {!submitted ? (
@@ -1622,7 +1654,7 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
 
 // ─── Book Editor View ─────────────────────────────────────────────────────────
 // The full canvas editor: images, stickers, text, multi-page, auto-save
-function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL, isMobile }) {
+function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRTL, isMobile }) {
   // ── Local state (mirrors project, synced to parent on save) ──────────────
   const [pages,       setPages]       = useState(() => project.pages && project.pages.length ? project.pages : [{ id:generateId(), background:"#ffffff", elements:[] }]);
   const [currentPage, setCurrentPage] = useState(0);
@@ -1956,6 +1988,12 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL, isMob
               borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:DEEP_PURPLE,
               cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
               💾
+            </button>
+            <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
+              background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
+              border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700,
+              color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+              💳 {t("Order","اطلب")}
             </button>
           </div>
         </div>
@@ -2301,6 +2339,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, t, lang, isRTL, isMob
             color:"white", cursor:exporting?"not-allowed":"pointer", fontFamily:"'Quicksand',sans-serif",
             display:"flex", alignItems:"center", gap:4 }}>
             {exporting ? "⏳ " + t("Exporting...","جاري التصدير...") : "📄 " + t("Export PDF","تصدير PDF")}
+          </button>
+          <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
+            background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
+            border:"none", borderRadius:10, padding:"6px 18px", fontSize:12, fontWeight:700,
+            color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
+            display:"flex", alignItems:"center", gap:6 }}>
+            💳 {t("Order Now","اطلب الآن")}
           </button>
         </div>
       </div>
