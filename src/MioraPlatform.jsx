@@ -1022,9 +1022,19 @@ function OccasionBooksShowcase({ isMobile, t }) {
 
   // Auto-advance every 3s
   useEffect(() => {
-    timerRef.current = setInterval(next, 3000);
+    timerRef.current = setInterval(() => {
+      if (!animating) {
+        setAnimating(true);
+        setDirection(1);
+        setTimeout(() => {
+          setActiveIdx(prev => (prev + 1) % OCCASION_BOOKS.length);
+          setAnimating(false);
+        }, 320);
+      }
+    }, 3000);
     return () => clearInterval(timerRef.current);
-  }, [activeIdx, animating]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx]);
 
   const resetTimer = () => { clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); };
 
