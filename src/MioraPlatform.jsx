@@ -377,56 +377,9 @@ export default function MioraPlatform() {
         </div>
       </nav>
 
-      {/* Hero — Animated 3D Book */}
-      <section style={{ minHeight:"100vh", display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center",
-        textAlign:"center", padding: isMobile ? "100px 20px 48px" : "120px 24px 60px",
-        background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 40%,${WARM_WHITE} 100%)`,
-        position:"relative", overflow:"hidden" }}>
-
-        {/* Background blobs */}
-        <div style={{ position:"absolute", top:-80, right:-80, width:300, height:300, borderRadius:"50%", background:`${PASTEL_PURPLE}12`, pointerEvents:"none" }} />
-        <div style={{ position:"absolute", bottom:-40, left:-60, width:200, height:200, borderRadius:"50%", background:`${PASTEL_PURPLE}08`, pointerEvents:"none" }} />
-
-        {/* Floating stickers */}
-        <HeroStickers />
-
-        {/* MIORA title */}
-        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:isMobile?"clamp(42px,12vw,64px)":"clamp(48px,10vw,80px)",
-          color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4, animation:"fadeInUp 0.8s ease-out" }}>MIORA</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?12:16,
-          color:DARK_PURPLE, opacity:0.5, letterSpacing:6, textTransform:"uppercase", marginBottom: isMobile ? 28 : 36,
-          animation:"fadeInUp 0.8s ease-out 0.2s both" }}>by Layal</div>
-
-        {/* Animated 3D book */}
-        <AnimatedBook isMobile={isMobile} t={t} />
-
-        {/* Tagline */}
-        <p style={{ fontSize:isMobile?15:18, maxWidth:480, lineHeight:1.7, color:DARK_PURPLE, opacity:0.75,
-          fontWeight:300, margin:isMobile?"24px 0 28px":"32px 0 36px", animation:"fadeInUp 0.8s ease-out 0.4s both",
-          padding:"0 8px" }}>
-          {t("Beautiful photo albums for life's most precious moments.",
-             "ألبومات صور جميلة لأغلى لحظات الحياة.")}
-        </p>
-
-        {/* CTA Buttons */}
-        <div style={{ display:"flex", gap:12, flexWrap:"wrap", justifyContent:"center", animation:"fadeInUp 0.8s ease-out 0.6s both" }}>
-          <HeroBtn label={t("Start Creating","ابدأ التصميم")} primary
-            onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
-          {projects.length > 0 && <HeroBtn label={t(`My Projects (${projects.length})`,`مشاريعي (${projects.length})`)}
-            onClick={() => setCurrentView("my-projects")} />}
-          {!isMobile && <HeroBtn label={t("View Pricing","عرض الأسعار")}
-            onClick={() => document.getElementById("pricing-section")?.scrollIntoView({behavior:"smooth"})} />}
-        </div>
-
-        {/* Scroll hint */}
-        <div style={{ marginTop:isMobile?32:40, display:"flex", flexDirection:"column", alignItems:"center", gap:5,
-          opacity:0.3, animation:"fadeInUp 0.8s ease-out 1s both" }}>
-          {[0,1,2].map(i => (
-            <div key={i} style={{ width:5, height:5, borderRadius:"50%", background:DEEP_PURPLE,
-              animation:`scrollDot 1.4s ease-in-out ${i*0.2}s infinite` }} />
-          ))}
-        </div>
-      </section>
+      {/* Hero — Cinematic Book Intro */}
+      <CinematicHero isMobile={isMobile} t={t} lang={lang}
+        projects={projects} setCurrentView={setCurrentView} />
 
       {/* Occasions */}
       <section style={{ padding: isMobile ? "56px 16px" : "80px 24px", background:WARM_WHITE, textAlign:"center" }}>
@@ -622,136 +575,216 @@ export default function MioraPlatform() {
   );
 }
 
-// ─── Hero Animated Components ─────────────────────────────────────────────────
+// ─── Cinematic Hero ───────────────────────────────────────────────────────────
 const HERO_STICKERS = ["🌸","💜","✨","🌹","💕","🌷","💫","🎀","🌺","💖","🌼","⭐"];
 
-function HeroStickers() {
-  const [items, setItems] = useState([]);
+// Phases:
+//  0  intro     — book fills screen (scale ~2.5), cover closed,  0 → 0.8s
+//  1  open      — cover swings open while still large,           0.8 → 2.0s
+//  2  shrink    — book scales down + slides to left,             2.0 → 3.2s
+//  3  close     — cover snaps shut,                              3.0 → 3.8s
+//  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
+function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
+  const [phase, setPhase] = useState(0);
+  const [stickerItems, setStickerItems] = useState([]);
+
   useEffect(() => {
+    const t1 = setTimeout(() => setPhase(1), 800);
+    const t2 = setTimeout(() => setPhase(2), 2000);
+    const t3 = setTimeout(() => setPhase(3), 3000);
+    const t4 = setTimeout(() => setPhase(4), 3600);
+    return () => [t1,t2,t3,t4].forEach(clearTimeout);
+  }, []);
+
+  // Floating stickers — only spawn after reveal
+  useEffect(() => {
+    if (phase < 4) return;
     const spawn = () => {
       const id = generateId();
-      const s = {
-        id, emoji: HERO_STICKERS[Math.floor(Math.random() * HERO_STICKERS.length)],
-        left: Math.random() * 88 + "%",
-        size: 16 + Math.random() * 16,
-        duration: 4 + Math.random() * 4,
-        delay: Math.random() * 1.5,
-      };
-      setItems(prev => [...prev.slice(-10), s]);
-      setTimeout(() => setItems(prev => prev.filter(x => x.id !== id)), (s.duration + s.delay + 0.5) * 1000);
+      const s = { id, emoji:HERO_STICKERS[Math.floor(Math.random()*HERO_STICKERS.length)],
+        left:Math.random()*85+"%", size:14+Math.random()*14,
+        duration:4+Math.random()*4, delay:Math.random()*1 };
+      setStickerItems(prev => [...prev.slice(-12), s]);
+      setTimeout(() => setStickerItems(prev => prev.filter(x=>x.id!==id)), (s.duration+s.delay+0.5)*1000);
     };
-    spawn(); spawn(); spawn();
-    const iv = setInterval(spawn, 1200);
+    spawn(); spawn();
+    const iv = setInterval(spawn, 1400);
     return () => clearInterval(iv);
-  }, []);
+  }, [phase]);
+
+  // Book geometry
+  const BW = isMobile ? 140 : 200; // single cover width
+  const BH = isMobile ? 196 : 280;
+  const SPINE = 14;
+
+  // Phase-driven transforms for the whole book wrapper
+  const bookStyle = (() => {
+    const base = { position:"absolute", transformStyle:"preserve-3d",
+      transition:"transform 1.2s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.4,0,0.2,1), top 1.0s cubic-bezier(0.4,0,0.2,1)",
+      perspective:1400 };
+    if (phase === 0) return { ...base,
+      left:"50%", top:"50%",
+      transform:"translate(-50%,-50%) scale(2.6) rotateX(4deg)",
+      transition:"none" };
+    if (phase === 1) return { ...base,
+      left:"50%", top:"50%",
+      transform:"translate(-50%,-50%) scale(2.6) rotateX(4deg)" };
+    if (phase >= 2) return { ...base,
+      left: isMobile ? "50%" : "8%",
+      top:"50%",
+      transform: isMobile
+        ? "translate(-50%,-50%) scale(1) rotateX(2deg)"
+        : "translate(0,-50%) scale(1) rotateX(2deg)",
+      transition:"transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1), top 1.0s cubic-bezier(0.4,0,0.2,1)" };
+    return base;
+  })();
+
+  // Cover rotation
+  const coverOpen = phase === 1 || phase === 2;
+  const coverRot = coverOpen ? "rotateY(-150deg)" : "rotateY(0deg)";
+
   return (
-    <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
-      {items.map(s => (
-        <div key={s.id} style={{
-          position:"absolute", bottom:0, left:s.left, fontSize:s.size,
-          animation:`stickerRise ${s.duration}s ease ${s.delay}s forwards`,
-          opacity:0 }}>
-          {s.emoji}
-        </div>
-      ))}
-    </div>
-  );
-}
+    <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
+      background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
+      <link href={FONT_LINK} rel="stylesheet" />
 
-function AnimatedBook({ isMobile, t }) {
-  const [isOpen, setIsOpen] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setIsOpen(true), 800);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const bookW = isMobile ? 160 : 200;
-  const bookH = isMobile ? 220 : 280;
-  const spineW = 16;
-
-  return (
-    <div
-      onClick={() => setIsOpen(o => !o)}
-      style={{ perspective:1200, width: isMobile ? bookW*2+spineW+20 : bookW*2+spineW+20,
-        height:bookH, position:"relative", cursor:"pointer",
-        animation:"floatBook 4s ease-in-out infinite", marginTop: isMobile ? 8 : 16 }}>
-
-      {/* Inner page (left, always visible) */}
-      <div style={{ position:"absolute", left:0, top:0, width:bookW, height:bookH,
-        background:"#fffef9", borderRadius:"8px 3px 3px 8px",
-        boxShadow:"-3px 4px 20px rgba(74,48,104,0.1)",
-        display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"space-between",
-        padding:isMobile?"12px 10px":"18px 14px", overflow:"hidden",
-        opacity:isOpen?1:0, transition:"opacity 0.4s ease 0.6s" }}>
-        <div style={{ fontSize:isMobile?9:10, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.4 }}>01</div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, width:"100%" }}>
-          <div style={{ background:`${PASTEL_PURPLE}20`, borderRadius:4, height:isMobile?44:60, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?16:20, gridColumn:"1/-1" }}>🌅</div>
-          <div style={{ background:`${SOFT_PINK}40`, borderRadius:4, height:isMobile?36:48, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?14:18 }}>🌸</div>
-          <div style={{ background:`${PASTEL_PURPLE}15`, borderRadius:4, height:isMobile?36:48, display:"flex", alignItems:"center", justifyContent:"center", fontSize:isMobile?14:18 }}>✨</div>
-        </div>
-        <div style={{ fontSize:isMobile?8:9, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.35, fontFamily:"'Playfair Display',serif" }}>
-          {t("Our Story","قصتنا")}
-        </div>
+      {/* Floating stickers */}
+      <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
+        {stickerItems.map(s => (
+          <div key={s.id} style={{ position:"absolute", bottom:0, left:s.left, fontSize:s.size,
+            animation:`stickerRise ${s.duration}s ease ${s.delay}s forwards`, opacity:0 }}>
+            {s.emoji}
+          </div>
+        ))}
       </div>
 
-      {/* Spine */}
-      <div style={{ position:"absolute", left:bookW-2, top:0, width:spineW+4, height:bookH,
-        background:"linear-gradient(to right,#d4a8bc,#e8c4d4,#d4a8bc)",
-        display:"flex", alignItems:"center", justifyContent:"center", zIndex:5 }}>
-        <div style={{ fontSize:7, letterSpacing:3, textTransform:"uppercase",
-          color:"#a07888", writingMode:"vertical-rl", transform:"rotate(180deg)", opacity:0.6,
-          fontFamily:"'Playfair Display',serif" }}>Miora</div>
-      </div>
+      {/* Book */}
+      <div style={bookStyle}>
+        <div style={{ position:"relative", width:BW*2+SPINE, height:BH }}>
 
-      {/* Front cover — animates open */}
-      <div style={{ position:"absolute", left:bookW+spineW, top:0, width:bookW, height:bookH,
-        transformOrigin:"left center", transformStyle:"preserve-3d",
-        transform: isOpen ? "rotateY(-155deg)" : "rotateY(0deg)",
-        transition:"transform 1s cubic-bezier(0.4,0,0.2,1)",
-        borderRadius:"3px 8px 8px 3px",
-        boxShadow: isOpen ? "none" : `5px 5px 24px rgba(74,48,104,0.18)` }}>
-        {/* Front face */}
-        <div style={{ position:"absolute", inset:0, background:"#fff0f5", borderRadius:"3px 8px 8px 3px",
-          backfaceVisibility:"hidden", display:"flex", flexDirection:"column",
-          alignItems:"center", justifyContent:"center", padding:isMobile?"14px 10px":"20px 14px", overflow:"hidden" }}>
-          {/* Spine shadow on cover */}
-          <div style={{ position:"absolute", left:0, top:0, bottom:0, width:14,
-            background:"linear-gradient(to right,rgba(200,160,180,0.5),transparent)", borderRadius:"3px 0 0 3px" }} />
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?18:22, fontWeight:700,
-            color:"#c0506a", textAlign:"center", lineHeight:1.2, marginBottom:8 }}>
-            A Year<br/>to<br/>Remember
+          {/* Left page — inner spread */}
+          <div style={{ position:"absolute", left:0, top:0, width:BW, height:BH,
+            background:"#fffef9", borderRadius:"8px 0 0 8px",
+            boxShadow:"-3px 4px 20px rgba(74,48,104,0.10)",
+            display:"flex", flexDirection:"column", alignItems:"center",
+            justifyContent:"space-between", padding:"14px 12px",
+            opacity: phase>=1 ? 1:0, transition:"opacity 0.4s ease 0.5s" }}>
+            <div style={{ fontSize:8, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.35 }}>01</div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, width:"100%" }}>
+              <div style={{ background:`${PASTEL_PURPLE}20`, borderRadius:4, height:BH*0.22, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.08, gridColumn:"1/-1" }}>🌅</div>
+              <div style={{ background:`${SOFT_PINK}40`, borderRadius:4, height:BH*0.17, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.07 }}>🌸</div>
+              <div style={{ background:`${PASTEL_PURPLE}15`, borderRadius:4, height:BH*0.17, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.07 }}>✨</div>
+            </div>
+            <div style={{ fontSize:8, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.3, fontFamily:"'Playfair Display',serif" }}>
+              {t("Our Memories","ذكرياتنا")}
+            </div>
           </div>
-          <div style={{ fontSize:isMobile?7:8, letterSpacing:3, textTransform:"uppercase", color:"#c0506a", opacity:0.5, marginBottom:12 }}>
-            {t("Photo Album","ألبوم صور")}
+
+          {/* Spine */}
+          <div style={{ position:"absolute", left:BW-1, top:0, width:SPINE+2, height:BH, zIndex:5,
+            background:"linear-gradient(to right,#d4a8bc,#e8c4d4,#d0a0b8)",
+            display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <div style={{ fontSize:6, letterSpacing:3, textTransform:"uppercase",
+              color:"#a07888", writingMode:"vertical-rl", transform:"rotate(180deg)", opacity:0.6,
+              fontFamily:"'Playfair Display',serif" }}>Miora</div>
           </div>
-          {/* Rose SVG */}
-          <svg width={isMobile?70:90} height={isMobile?70:90} viewBox="0 0 90 90" fill="none">
-            <circle cx="45" cy="45" r="22" fill="#f4a0b8" opacity="0.25"/>
-            <ellipse cx="45" cy="35" rx="9" ry="12" fill="#e87898" opacity="0.85"/>
-            <ellipse cx="35" cy="44" rx="9" ry="12" fill="#d45878" opacity="0.7" transform="rotate(-30 35 44)"/>
-            <ellipse cx="55" cy="44" rx="9" ry="12" fill="#e87898" opacity="0.7" transform="rotate(30 55 44)"/>
-            <ellipse cx="45" cy="55" rx="9" ry="12" fill="#f09ab4" opacity="0.85"/>
-            <ellipse cx="45" cy="45" rx="7" ry="7" fill="#c04068"/>
-            <ellipse cx="30" cy="64" rx="6" ry="10" fill="#88b878" opacity="0.65" transform="rotate(-20 30 64)"/>
-            <ellipse cx="60" cy="64" rx="6" ry="10" fill="#68a858" opacity="0.65" transform="rotate(20 60 64)"/>
-          </svg>
-        </div>
-        {/* Back face */}
-        <div style={{ position:"absolute", inset:0, background:"#f8e8ef", borderRadius:"3px 8px 8px 3px",
-          backfaceVisibility:"hidden", transform:"rotateY(180deg)",
-          display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ fontSize:9, letterSpacing:3, textTransform:"uppercase", color:"#c0506a", opacity:0.4, fontFamily:"'Playfair Display',serif" }}>
-            Miora by Layal
+
+          {/* Front cover */}
+          <div style={{ position:"absolute", left:BW+SPINE, top:0, width:BW, height:BH,
+            transformOrigin:"left center", transformStyle:"preserve-3d",
+            transform: coverRot,
+            transition: phase===3
+              ? "transform 0.7s cubic-bezier(0.6,0,0.4,1)"
+              : "transform 0.9s cubic-bezier(0.4,0,0.2,1)",
+            borderRadius:"0 8px 8px 0",
+            boxShadow: coverOpen ? "none" : "5px 5px 28px rgba(74,48,104,0.20)" }}>
+
+            {/* Front face */}
+            <div style={{ position:"absolute", inset:0, background:"#fff0f5",
+              borderRadius:"0 8px 8px 0", backfaceVisibility:"hidden",
+              display:"flex", flexDirection:"column", alignItems:"center",
+              justifyContent:"center", padding:"16px 12px", overflow:"hidden" }}>
+              <div style={{ position:"absolute", left:0, top:0, bottom:0, width:12,
+                background:"linear-gradient(to right,rgba(200,160,180,0.5),transparent)" }} />
+              <div style={{ fontFamily:"'Playfair Display',serif",
+                fontSize:isMobile?15:20, fontWeight:700, color:"#c0506a",
+                textAlign:"center", lineHeight:1.25, marginBottom:6 }}>
+                A Year<br/>to<br/>Remember
+              </div>
+              <div style={{ fontSize:isMobile?6:7, letterSpacing:3, textTransform:"uppercase",
+                color:"#c0506a", opacity:0.45, marginBottom:10 }}>
+                {t("Photo Album","ألبوم صور")}
+              </div>
+              <svg width={isMobile?60:80} height={isMobile?60:80} viewBox="0 0 80 80" fill="none">
+                <circle cx="40" cy="40" r="20" fill="#f4a0b8" opacity="0.22"/>
+                <ellipse cx="40" cy="31" rx="8" ry="11" fill="#e87898" opacity="0.85"/>
+                <ellipse cx="31" cy="39" rx="8" ry="11" fill="#d45878" opacity="0.7" transform="rotate(-30 31 39)"/>
+                <ellipse cx="49" cy="39" rx="8" ry="11" fill="#e87898" opacity="0.7" transform="rotate(30 49 39)"/>
+                <ellipse cx="40" cy="49" rx="8" ry="11" fill="#f09ab4" opacity="0.85"/>
+                <ellipse cx="40" cy="40" rx="7" ry="7" fill="#c04068"/>
+                <ellipse cx="26" cy="57" rx="5" ry="9" fill="#88b878" opacity="0.65" transform="rotate(-20 26 57)"/>
+                <ellipse cx="54" cy="57" rx="5" ry="9" fill="#68a858" opacity="0.65" transform="rotate(20 54 57)"/>
+              </svg>
+            </div>
+            {/* Back face */}
+            <div style={{ position:"absolute", inset:0, background:"#f8e8ef",
+              borderRadius:"0 8px 8px 0", backfaceVisibility:"hidden", transform:"rotateY(180deg)",
+              display:"flex", alignItems:"center", justifyContent:"center" }}>
+              <div style={{ fontSize:7, letterSpacing:3, textTransform:"uppercase",
+                color:"#c0506a", opacity:0.35, fontFamily:"'Playfair Display',serif", textAlign:"center" }}>
+                Miora<br/>by Layal
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Tap hint */}
-      <div style={{ position:"absolute", bottom:-24, left:0, right:0, textAlign:"center",
-        fontSize:10, color:DEEP_PURPLE, opacity:0.3, letterSpacing:1, textTransform:"uppercase" }}>
-        {isOpen ? t("tap to close","اضغط للإغلاق") : t("tap to open","اضغط للفتح")}
+      {/* Hero content — fades in on the right after reveal (desktop) or below (mobile) */}
+      <div style={{
+        position:"absolute",
+        left: isMobile ? 0 : "calc(8% + " + (BW*2+SPINE+40) + "px)",
+        right: 0,
+        top: isMobile ? "auto" : "50%",
+        bottom: isMobile ? 0 : "auto",
+        transform: (!isMobile && phase>=4) ? "translateY(-50%)" : isMobile ? "none" : "translateY(-40%)",
+        padding: isMobile ? "0 24px 48px" : "0 40px",
+        opacity: phase >= 4 ? 1 : 0,
+        transition: "opacity 0.8s ease, transform 0.8s ease",
+        textAlign: isMobile ? "center" : "left",
+        pointerEvents: phase >= 4 ? "auto" : "none",
+        zIndex: 10,
+      }}>
+        <div style={{ fontFamily:"'Londrina Solid',cursive",
+          fontSize:isMobile?"clamp(40px,12vw,60px)":"clamp(40px,5vw,72px)",
+          color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4 }}>MIORA</div>
+        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?11:14,
+          color:DARK_PURPLE, opacity:0.45, letterSpacing:6, textTransform:"uppercase", marginBottom:16 }}>
+          by Layal
+        </div>
+        <p style={{ fontSize:isMobile?14:17, maxWidth:360, lineHeight:1.75,
+          color:DARK_PURPLE, opacity:0.7, fontWeight:300, marginBottom:28 }}>
+          {t("Beautiful photo albums for life's most precious moments.",
+             "ألبومات صور جميلة لأغلى لحظات الحياة.")}
+        </p>
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent: isMobile ? "center" : "flex-start" }}>
+          <HeroBtn label={t("Start Creating","ابدأ التصميم")} primary
+            onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
+          {projects.length > 0 && (
+            <HeroBtn label={t(`My Projects (${projects.length})`,`مشاريعي (${projects.length})`)}
+              onClick={() => setCurrentView("my-projects")} />
+          )}
+        </div>
+        {/* Scroll dots */}
+        <div style={{ display:"flex", flexDirection: isMobile?"row":"column",
+          justifyContent:isMobile?"center":"flex-start",
+          gap:5, marginTop:28, opacity:0.3 }}>
+          {[0,1,2].map(i=>(
+            <div key={i} style={{ width:5, height:5, borderRadius:"50%", background:DEEP_PURPLE,
+              animation:`scrollDot 1.4s ease-in-out ${i*0.2}s infinite` }} />
+          ))}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
