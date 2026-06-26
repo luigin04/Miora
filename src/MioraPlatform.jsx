@@ -596,8 +596,6 @@ export default function MioraPlatform() {
 }
 
 // ─── Cinematic Hero ───────────────────────────────────────────────────────────
-const HERO_STICKERS = []; // kept for reference, replaced by floating books
-
 // Phases:
 //  0  intro     — book fills screen (scale ~2.5), cover closed,  0 → 0.8s
 //  1  open      — cover swings open while still large,           0.8 → 2.0s
