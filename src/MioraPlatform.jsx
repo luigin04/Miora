@@ -334,6 +334,7 @@ export default function MioraPlatform() {
       t={t} lang={lang} isRTL={isRTL} isMobile={isMobile}
     />;
   }
+  const editorModes = ["editor-manual","editor-ai","editor-template"];
   if (editorModes.includes(currentView)) {
     const mode = currentView.replace("editor-","");
     let pid = activeProjectId;
