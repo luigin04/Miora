@@ -2,7 +2,8 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import {
   getAuth, onAuthStateChanged, signInAnonymously,
-  GoogleAuthProvider, signInWithPopup, linkWithPopup,
+  GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+  getRedirectResult, linkWithPopup, linkWithRedirect,
 } from "firebase/auth";
 
 const firebaseConfig = {
@@ -23,29 +24,58 @@ export const googleProvider = new GoogleAuthProvider();
 
 /**
  * Sign in with Google.
- * If the current user is anonymous, upgrade (link) their session to Google
- * so any orders they placed anonymously are preserved under the same UID.
- * If already signed in with Google or another account, just sign in normally.
+ * Tries popup first (faster UX). Falls back to redirect if popup is blocked.
+ * If the current session is anonymous, upgrades it to Google to preserve orders.
  */
 export async function signInWithGoogle() {
   const current = auth.currentUser;
   try {
     if (current && current.isAnonymous) {
-      // Upgrade anonymous → Google, preserving the UID and all Firestore docs
-      await linkWithPopup(current, googleProvider);
-      return auth.currentUser;
+      // Upgrade anonymous → Google, preserving UID and all Firestore docs
+      const result = await linkWithPopup(current, googleProvider);
+      return result.user;
     } else {
       const result = await signInWithPopup(auth, googleProvider);
       return result.user;
     }
   } catch (err) {
-    // If the Google account already exists separately, just sign in with it
-    if (err.code === "auth/credential-already-in-use" ||
-        err.code === "auth/email-already-in-use") {
+    // Popup blocked or closed — fall back to redirect
+    if (
+      err.code === "auth/popup-blocked" ||
+      err.code === "auth/popup-closed-by-user" ||
+      err.code === "auth/cancelled-popup-request"
+    ) {
+      // Use redirect as fallback
+      if (current && current.isAnonymous) {
+        await linkWithRedirect(current, googleProvider);
+      } else {
+        await signInWithRedirect(auth, googleProvider);
+      }
+      return null; // page will redirect, result handled on return
+    }
+    // Google account already exists as a separate account — just sign in
+    if (
+      err.code === "auth/credential-already-in-use" ||
+      err.code === "auth/email-already-in-use"
+    ) {
       const result = await signInWithPopup(auth, googleProvider);
       return result.user;
     }
     throw err;
+  }
+}
+
+/**
+ * Handle redirect result on page load (called once in the app root).
+ * Returns the user if returning from a Google redirect sign-in, null otherwise.
+ */
+export async function handleGoogleRedirectResult() {
+  try {
+    const result = await getRedirectResult(auth);
+    return result?.user || null;
+  } catch (err) {
+    console.error("Redirect result error:", err);
+    return null;
   }
 }
 
