@@ -2,8 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import {
   getAuth, onAuthStateChanged, signInAnonymously,
-  GoogleAuthProvider, signInWithPopup,
-  linkWithPopup, linkWithCredential, OAuthProvider,
+  GoogleAuthProvider, signInWithPopup, linkWithPopup,
 } from "firebase/auth";
 
 const firebaseConfig = {
