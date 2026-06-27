@@ -685,11 +685,11 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
       const key = bookKeys[bookIdx % bookKeys.length];
       bookIdx++;
       const book = LAYAL_BOOK_IMAGES[key];
-      const scale = 0.22 + Math.random() * 0.12;
+      const scale = 0.32 + Math.random() * 0.18;
       const duration = 10 + Math.random() * 8;
       const delay = Math.random() * 2;
       const tilt = (Math.random() - 0.5) * 16;
-      const left = 4 + Math.random() * 88;
+      const left = 2 + Math.random() * 92;
       const b = { id, book, scale, duration, delay, tilt, left };
       setFloatingBooks(prev => [...prev.slice(-10), b]);
       setTimeout(() => setFloatingBooks(prev => prev.filter(x => x.id !== id)),
@@ -736,22 +736,19 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
       background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
-      {/* Floating Layal's real books — drift upward slowly from the bottom */}
+      {/* Floating Layal's real books */}
       <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
-        {floatingBooks.map(b => {
-          const H = 220 * b.scale;
-          return (
-            <img key={b.id} src={b.book.src} alt={b.book.title}
-              style={{
-                position:"absolute", bottom:"-5%", left:`${b.left}%`,
-                height:H, width:"auto",
-                animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
-                opacity:0, transform:`rotate(${b.tilt}deg)`,
-                filter:"drop-shadow(0 6px 16px rgba(74,48,104,0.20))",
-                borderRadius:3,
-              }} />
-          );
-        })}
+        {floatingBooks.map(b => (
+          <img key={b.id} src={b.book.src} alt={b.book.title}
+            style={{
+              position:"absolute", bottom:"-5%", left:`${b.left}%`,
+              height: 280 * b.scale,
+              width:"auto",
+              animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
+              opacity:0,
+              transform:`rotate(${b.tilt}deg)`,
+            }} />
+        ))}
       </div>
 
       {/* Book */}
