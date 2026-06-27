@@ -29,9 +29,14 @@ export const googleProvider = new GoogleAuthProvider();
  */
 export async function signInWithGoogle() {
   const current = auth.currentUser;
+
+  // Already signed in with Google (or any non-anonymous provider) — nothing to do
+  if (current && !current.isAnonymous) {
+    return current;
+  }
+
   try {
     if (current && current.isAnonymous) {
-      // Upgrade anonymous → Google, preserving UID and all Firestore docs
       const result = await linkWithPopup(current, googleProvider);
       return result.user;
     } else {
@@ -39,21 +44,18 @@ export async function signInWithGoogle() {
       return result.user;
     }
   } catch (err) {
-    // Popup blocked or closed — fall back to redirect
     if (
       err.code === "auth/popup-blocked" ||
       err.code === "auth/popup-closed-by-user" ||
       err.code === "auth/cancelled-popup-request"
     ) {
-      // Use redirect as fallback
       if (current && current.isAnonymous) {
         await linkWithRedirect(current, googleProvider);
       } else {
         await signInWithRedirect(auth, googleProvider);
       }
-      return null; // page will redirect, result handled on return
+      return null;
     }
-    // Google account already exists as a separate account — just sign in
     if (
       err.code === "auth/credential-already-in-use" ||
       err.code === "auth/email-already-in-use"
