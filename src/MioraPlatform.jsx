@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
-import { auth, db, ADMIN_EMAIL, ensureAuth, signInWithGoogle } from "./firebase";
+import { auth, db, ADMIN_EMAIL, ensureAuth, signInWithGoogle, handleGoogleRedirectResult } from "./firebase";
 import {
   collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
 } from "firebase/firestore";
@@ -242,9 +242,11 @@ export default function MioraPlatform() {
   const dir   = isRTL ? "rtl" : "ltr";
   const t = (en, ar) => lang === "ar" ? ar : en;
 
-  // ── Bootstrap Firebase auth (anonymous for everyone, until admin logs in) ──
+  // ── Bootstrap Firebase auth ──────────────────────────────────────────────
   useEffect(() => {
     const unsub = ensureAuth((user) => setAuthUser(user));
+    // Handle returning from Google redirect sign-in
+    handleGoogleRedirectResult().catch(console.error);
     return unsub;
   }, []);
 
@@ -1472,7 +1474,13 @@ function GoogleSignInButton({ onSuccess, label, style = {} }) {
       onSuccess && onSuccess();
     } catch (err) {
       console.error("Google sign-in failed:", err);
-      setError("Sign-in failed. Please try again.");
+      if (err.code === "auth/unauthorized-domain") {
+        setError("Domain not authorized. Please contact support.");
+      } else if (err.code === "auth/operation-not-allowed") {
+        setError("Google sign-in is not enabled. Please contact support.");
+      } else {
+        setError("Sign-in failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
