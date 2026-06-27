@@ -6,6 +6,11 @@
   command = "npm start"
   port = 3000
 
+# Firebase API keys are intentionally public — they're protected by
+# Firebase Security Rules, not by being hidden. Tell Netlify to skip scanning.
+[build.environment]
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
