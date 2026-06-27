@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import {
+  getAuth, onAuthStateChanged, signInAnonymously,
+  GoogleAuthProvider, signInWithPopup,
+  linkWithPopup, linkWithCredential, OAuthProvider,
+} from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDH4agaD9PKzeYF1D5e01ynG_ceD8ngi8A",
@@ -13,17 +17,42 @@ const firebaseConfig = {
 };
 
 export const ADMIN_EMAIL = "mioraphotosjo@gmail.com";
-
 export const firebaseApp = initializeApp(firebaseConfig);
 export const db = getFirestore(firebaseApp);
 export const auth = getAuth(firebaseApp);
+export const googleProvider = new GoogleAuthProvider();
+
+/**
+ * Sign in with Google.
+ * If the current user is anonymous, upgrade (link) their session to Google
+ * so any orders they placed anonymously are preserved under the same UID.
+ * If already signed in with Google or another account, just sign in normally.
+ */
+export async function signInWithGoogle() {
+  const current = auth.currentUser;
+  try {
+    if (current && current.isAnonymous) {
+      // Upgrade anonymous → Google, preserving the UID and all Firestore docs
+      await linkWithPopup(current, googleProvider);
+      return auth.currentUser;
+    } else {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    }
+  } catch (err) {
+    // If the Google account already exists separately, just sign in with it
+    if (err.code === "auth/credential-already-in-use" ||
+        err.code === "auth/email-already-in-use") {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    }
+    throw err;
+  }
+}
 
 /**
  * Ensures every visitor has a Firebase Auth session.
- * - If they're already signed in (anonymously, or as the admin), the callback fires immediately.
- * - Otherwise, signs them in anonymously so their payment submissions can be tagged with a stable uid
- *   and they can read back their own orders, without requiring a real account/login.
- * Returns an unsubscribe function.
+ * Signs in anonymously if not already signed in.
  */
 export function ensureAuth(callback) {
   return onAuthStateChanged(auth, (user) => {
