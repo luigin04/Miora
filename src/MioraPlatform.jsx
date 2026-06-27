@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
-import { auth, db, ADMIN_EMAIL, ensureAuth, signInWithGoogle, handleGoogleRedirectResult } from "./firebase";
+import { auth, db, ADMIN_EMAIL, signInWithGoogle, handleGoogleRedirectResult } from "./firebase";
 import {
   collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
 } from "firebase/firestore";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -244,7 +244,15 @@ export default function MioraPlatform() {
 
   // ── Bootstrap Firebase auth ──────────────────────────────────────────────
   useEffect(() => {
-    const unsub = ensureAuth((user) => setAuthUser(user));
+    // Listen to ALL auth state changes — anonymous, Google, admin
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthUser(user);
+      } else {
+        // No user at all — sign in anonymously so Firestore rules work
+        signInAnonymously(auth).catch(console.error);
+      }
+    });
     // Handle returning from Google redirect sign-in
     handleGoogleRedirectResult().catch(console.error);
     return unsub;
