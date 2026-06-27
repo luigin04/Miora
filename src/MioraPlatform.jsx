@@ -739,33 +739,17 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
       {/* Floating Layal's real books — drift upward slowly from the bottom */}
       <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
         {floatingBooks.map(b => {
-          const W = 240 * b.scale;
-          const H = 336 * b.scale;
-          const SPINE_W = Math.round(28 * b.scale);
+          const H = 220 * b.scale;
           return (
-            <div key={b.id} style={{
-              position:"absolute", bottom:"-5%", left:`${b.left}%`,
-              animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
-              opacity:0, transform:`rotate(${b.tilt}deg)`,
-              display:"flex", filter:"drop-shadow(0 4px 14px rgba(74,48,104,0.18))" }}>
-              {/* Spine */}
-              <div style={{ width:SPINE_W, height:H, background:b.book.spineBg,
-                borderRadius:`${3*b.scale}px 0 0 ${3*b.scale}px`,
-                display:"flex", alignItems:"center", justifyContent:"center",
-                flexShrink:0, boxShadow:"inset -2px 0 6px rgba(0,0,0,0.12)" }}>
-                <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
-                  fontSize:Math.max(5, 7*b.scale), fontWeight:700, letterSpacing:1.5,
-                  textTransform:"uppercase", color:b.book.spineText, opacity:0.85,
-                  fontFamily:"'Quicksand',sans-serif" }}>
-                  {b.book.title}
-                </div>
-              </div>
-              {/* Real cover photo */}
-              <img src={b.book.src} alt={b.book.title}
-                style={{ width:W, height:H, objectFit:"cover",
-                  borderRadius:`0 ${3*b.scale}px ${3*b.scale}px 0`,
-                  display:"block" }} />
-            </div>
+            <img key={b.id} src={b.book.src} alt={b.book.title}
+              style={{
+                position:"absolute", bottom:"-5%", left:`${b.left}%`,
+                height:H, width:"auto",
+                animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
+                opacity:0, transform:`rotate(${b.tilt}deg)`,
+                filter:"drop-shadow(0 6px 16px rgba(74,48,104,0.20))",
+                borderRadius:3,
+              }} />
           );
         })}
       </div>
