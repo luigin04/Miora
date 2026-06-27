@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
-import { auth, db, ADMIN_EMAIL, ensureAuth } from "./firebase";
+import { auth, db, ADMIN_EMAIL, ensureAuth, signInWithGoogle } from "./firebase";
 import {
   collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
 } from "firebase/firestore";
@@ -413,6 +413,30 @@ export default function MioraPlatform() {
             cursor:"pointer", fontSize: isMobile ? 11 : 13, color:DEEP_PURPLE, fontWeight:600, whiteSpace:"nowrap" }}>
             {lang==="en"?"عربي":"EN"}
           </button>
+          {/* Auth state */}
+          {authUser && !authUser.isAnonymous ? (
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              {authUser.photoURL && (
+                <img src={authUser.photoURL} alt="" style={{ width:28, height:28, borderRadius:"50%", border:`2px solid ${PASTEL_PURPLE}40` }} />
+              )}
+              {!isMobile && (
+                <span style={{ fontSize:12, color:DARK_PURPLE, opacity:0.6, maxWidth:100, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {authUser.displayName?.split(" ")[0]}
+                </span>
+              )}
+              <button onClick={() => signOut(auth)} style={{ fontSize:11, color:DARK_PURPLE, opacity:0.45, background:"none", border:"none", cursor:"pointer", fontFamily:"'Quicksand',sans-serif", whiteSpace:"nowrap" }}>
+                {lang==="ar" ? "خروج" : "Sign out"}
+              </button>
+            </div>
+          ) : (
+            <button onClick={async () => { try { await signInWithGoogle(); } catch(e){} }} style={{
+              background:DEEP_PURPLE, color:"white", border:"none", borderRadius:20,
+              padding: isMobile ? "5px 12px" : "6px 16px", fontSize: isMobile ? 11 : 12,
+              fontWeight:700, cursor:"pointer", fontFamily:"'Quicksand',sans-serif", whiteSpace:"nowrap",
+              display:"flex", alignItems:"center", gap:6 }}>
+              {isMobile ? (lang==="ar"?"دخول":"Sign in") : (lang==="ar"?"تسجيل الدخول":"Sign in")}
+            </button>
+          )}
         </div>
       </nav>
 
@@ -1435,6 +1459,50 @@ const Icon = ({ name, size=20, color="currentColor", strokeWidth=1.5 }) => {
   return icons[name] || null;
 };
 
+// ─── Google Sign-In Button ────────────────────────────────────────────────────
+function GoogleSignInButton({ onSuccess, label, style = {} }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleClick = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithGoogle();
+      onSuccess && onSuccess();
+    } catch (err) {
+      console.error("Google sign-in failed:", err);
+      setError("Sign-in failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={handleClick} disabled={loading} style={{
+        display:"flex", alignItems:"center", justifyContent:"center", gap:10,
+        padding:"12px 24px", borderRadius:12, border:`1.5px solid ${PASTEL_PURPLE}40`,
+        background:"white", cursor:loading?"not-allowed":"pointer", fontSize:14,
+        fontWeight:600, color:DARK_PURPLE, fontFamily:"'Quicksand',sans-serif",
+        width:"100%", opacity:loading?0.6:1, transition:"all 0.2s ease",
+        boxShadow:`0 2px 8px ${PASTEL_PURPLE}10`, ...style }}
+        onMouseEnter={e => { if(!loading) e.currentTarget.style.boxShadow=`0 4px 16px ${PASTEL_PURPLE}20`; }}
+        onMouseLeave={e => e.currentTarget.style.boxShadow=`0 2px 8px ${PASTEL_PURPLE}10`}>
+        {/* Google G logo */}
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        {loading ? "Signing in..." : (label || "Continue with Google")}
+      </button>
+      {error && <p style={{ fontSize:12, color:"#e74c3c", marginTop:8, textAlign:"center" }}>{error}</p>}
+    </div>
+  );
+}
+
 // ─── Small shared components ──────────────────────────────────────────────────
 function SectionTitle({ title, subtitle }) {
   return (
@@ -1552,8 +1620,10 @@ function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
   const [payments, setPayments] = useState([]);
   const [loading,  setLoading]  = useState(true);
 
+  const isSignedIn = authUser && !authUser.isAnonymous;
+
   useEffect(() => {
-    if (!authUser) return;
+    if (!isSignedIn) { setLoading(false); return; }
     const q = query(collection(db, "payments"), where("customerUid", "==", authUser.uid));
     const unsub = onSnapshot(q, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1562,11 +1632,11 @@ function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
       setLoading(false);
     }, (err) => { console.error("Orders listener failed:", err); setLoading(false); });
     return unsub;
-  }, [authUser]);
+  }, [authUser, isSignedIn]);
 
   const fmt = iso => { try { return new Date(iso).toLocaleDateString(lang==="ar"?"ar-JO":"en-US",{month:"short",day:"numeric",year:"numeric"}); } catch{return iso;} };
   const statusColors = { pending:GOLD_ACCENT, approved:"#27ae60", rejected:"#e74c3c" };
-  const statusLabel = s => s==="pending" ? t("Pending Review","قيد المراجعة") : s==="approved" ? t("Approved","تمت الموافقة") : t("Rejected","مرفوض");
+  const statusLabel = s => s==="pending" ? t("Pending Review","قيد المراجعة") : s==="approved" ? t("Approved ✓","تمت الموافقة ✓") : t("Rejected","مرفوض");
 
   return (
     <div dir={isRTL?"rtl":"ltr"} style={{ ...pageShell, background:`linear-gradient(180deg,${SOFT_PINK}30,${WARM_WHITE})` }}>
@@ -1574,15 +1644,32 @@ function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
       <button onClick={onBack} style={backBtnStyle}>← {t("Back","عودة")}</button>
       <div style={{ maxWidth:600, margin:"0 auto" }}>
         <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize:28, textAlign:"center", marginBottom:32, color:DARK_PURPLE }}>{t("My Orders","طلباتي")}</h1>
-        {loading ? (
+
+        {/* Not signed in — prompt */}
+        {!isSignedIn ? (
+          <div style={{ textAlign:"center", padding:48, background:"white", borderRadius:20,
+            border:`1px solid ${PASTEL_PURPLE}15`, boxShadow:`0 4px 20px ${PASTEL_PURPLE}08` }}>
+            <div style={{ marginBottom:16, opacity:0.25 }}><Icon name="receipt" size={48} color={DARK_PURPLE} /></div>
+            <h3 style={{ fontFamily:"'Playfair Display',serif", fontSize:20, color:DARK_PURPLE, marginBottom:8 }}>
+              {t("Sign in to see your orders","سجّل دخولك لرؤية طلباتك")}
+            </h3>
+            <p style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, marginBottom:24, lineHeight:1.6 }}>
+              {t("Your orders are saved to your account. Sign in with Google to view and track them from any device.",
+                 "طلباتك محفوظة في حسابك. سجّل دخولك بـ Google لعرضها وتتبعها من أي جهاز.")}
+            </p>
+            <GoogleSignInButton label={t("Sign in with Google","تسجيل الدخول بـ Google")} />
+          </div>
+        ) : loading ? (
           <div style={{ textAlign:"center", padding:40, color:DARK_PURPLE, opacity:0.5, fontSize:14 }}>{t("Loading...","جاري التحميل...")}</div>
         ) : payments.length === 0 ? (
           <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15` }}>
             <div style={{ marginBottom:16, opacity:0.25 }}><Icon name="receipt" size={48} color={DARK_PURPLE} /></div>
             <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No orders yet","لا توجد طلبات بعد")}</div>
+            <p style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, marginTop:8 }}>{t("Orders you place will appear here.","الطلبات التي تضعها ستظهر هنا.")}</p>
           </div>
         ) : payments.map((pay) => (
-          <div key={pay.id} style={{ background:"white", borderRadius:16, padding:"20px 24px", marginBottom:12, border:`1px solid ${PASTEL_PURPLE}15`, display:"flex", gap:16, alignItems:"center" }}>
+          <div key={pay.id} style={{ background:"white", borderRadius:16, padding:"20px 24px", marginBottom:12,
+            border:`1px solid ${PASTEL_PURPLE}15`, display:"flex", gap:16, alignItems:"center" }}>
             {pay.proofImage && <img src={pay.proofImage} alt="proof" style={{ width:56, height:56, objectFit:"cover", borderRadius:10, flexShrink:0 }} />}
             <div style={{ flex:1 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
@@ -1609,6 +1696,8 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
   const [sendError, setSendError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
 
+  const isSignedIn = authUser && !authUser.isAnonymous;
+
   const handleFile = e => {
     const f = e.target.files[0];
     if (!f) return;
@@ -1630,6 +1719,8 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
 
       await addDoc(collection(db, "payments"), {
         customerUid: authUser.uid,
+        customerName: authUser.displayName || null,
+        customerEmail: authUser.email || null,
         package: selectedPackage,
         status: "pending",
         proofImage: compressed,
@@ -1680,6 +1771,17 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
         )}
         {!submitted ? (
           <div style={{ background:"white", borderRadius:20, padding:32, border:`1px solid ${PASTEL_PURPLE}20` }}>
+            {/* Sign-in gate — must be signed in to submit order */}
+            {!isSignedIn && (
+              <div style={{ background:`${SOFT_PINK}30`, borderRadius:14, padding:20, marginBottom:20,
+                border:`1px solid ${PASTEL_PURPLE}30`, textAlign:"center" }}>
+                <p style={{ fontSize:13, color:DARK_PURPLE, opacity:0.7, marginBottom:16, lineHeight:1.6 }}>
+                  {t("Sign in with Google to submit your order and track it from any device.",
+                     "سجّل دخولك بـ Google لإرسال طلبك وتتبعه من أي جهاز.")}
+                </p>
+                <GoogleSignInButton label={t("Sign in with Google","تسجيل الدخول بـ Google")} />
+              </div>
+            )}
             <h3 style={{ fontSize:16, fontWeight:700, marginBottom:20, textAlign:"center", color:DARK_PURPLE }}>{t("Payment via CliQ","الدفع عبر كليك")}</h3>
             <div style={{ background:`${SOFT_PINK}30`, borderRadius:12, padding:20, marginBottom:24, border:`1px dashed ${PASTEL_PURPLE}40` }}>
               <div style={{ fontSize:13, fontWeight:700, marginBottom:8, color:DEEP_PURPLE }}>{t("Instructions:","تعليمات الدفع:")}</div>
@@ -1706,7 +1808,7 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
             {sendError && (
               <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginBottom:16 }}>{sendError}</p>
             )}
-            <button onClick={handleSubmit} disabled={!file || sending || !authUser} style={{ ...primaryBtnStyle, opacity:(file && !sending && authUser)?1:0.5, cursor:(file && !sending && authUser)?"pointer":"not-allowed" }}>
+            <button onClick={handleSubmit} disabled={!file || sending || !isSignedIn} style={{ ...primaryBtnStyle, opacity:(file && !sending && isSignedIn)?1:0.5, cursor:(file && !sending && isSignedIn)?"pointer":"not-allowed" }}>
               {sending ? t("Submitting...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
             </button>
           </div>
@@ -1878,6 +1980,8 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                   </div>
                   <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5, marginBottom:14 }}>
                     {t("Submitted","أُرسل")}: {fmt(pay.createdAt)}
+                    {pay.customerName && <span> · {pay.customerName}</span>}
+                    {pay.customerEmail && <span style={{ opacity:0.6 }}> ({pay.customerEmail})</span>}
                   </div>
                   <div style={{ display:"flex", gap:8 }}>
                     <button onClick={() => setStatus(pay.id, "approved")} disabled={pay.status==="approved"} style={{
