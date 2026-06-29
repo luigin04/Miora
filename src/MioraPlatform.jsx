@@ -829,46 +829,53 @@ function FloatingBooksLayer() {
 //  3  close     — cover snaps shut,                              3.0 → 3.8s
 //  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
 function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
+  // Phases:
+  // 0 → cover fills screen, closed
+  // 1 → cover swings open, inner page visible
+  // 2 → cover swings back shut
+  // 3 → book shrinks + slides left
+  // 4 → hero text reveals right
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 800);
-    const t2 = setTimeout(() => setPhase(2), 2000);
-    const t3 = setTimeout(() => setPhase(3), 3000);
-    const t4 = setTimeout(() => setPhase(4), 3600);
+    const t1 = setTimeout(() => setPhase(1), 800);   // open
+    const t2 = setTimeout(() => setPhase(2), 2200);  // close
+    const t3 = setTimeout(() => setPhase(3), 3100);  // shrink left
+    const t4 = setTimeout(() => setPhase(4), 3900);  // reveal text
     return () => [t1,t2,t3,t4].forEach(clearTimeout);
   }, []);
 
-  // Book geometry
-  const BW = isMobile ? 140 : 200; // single cover width
-  const BH = isMobile ? 196 : 280;
-  const SPINE = 14;
+  // Book dimensions
+  const BW = isMobile ? 180 : 260; // cover width
+  const BH = isMobile ? 252 : 364; // cover height (same ratio as image ~600x800)
+  const SPINE = isMobile ? 14 : 20;
 
-  // Phase-driven transforms for the whole book wrapper
-  const bookStyle = (() => {
-    const base = { position:"absolute", transformStyle:"preserve-3d",
-      transition:"transform 1.2s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.4,0,0.2,1), top 1.0s cubic-bezier(0.4,0,0.2,1)",
-      perspective:1400 };
-    if (phase === 0) return { ...base,
+  // Phase-driven wrapper style
+  const wrapperStyle = (() => {
+    const base = {
+      position:"absolute",
+      transition:"transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1), top 1.0s cubic-bezier(0.4,0,0.2,1)",
+    };
+    if (phase <= 2) return { ...base,
       left:"50%", top:"50%",
-      transform:"translate(-50%,-50%) scale(2.6) rotateX(4deg)",
-      transition:"none" };
-    if (phase === 1) return { ...base,
-      left:"50%", top:"50%",
-      transform:"translate(-50%,-50%) scale(2.6) rotateX(4deg)" };
-    if (phase >= 2) return { ...base,
-      left: isMobile ? "50%" : "8%",
+      transform:"translate(-50%,-50%) scale(2.4) rotateX(3deg)",
+      transition: phase === 0 ? "none" : base.transition,
+    };
+    if (phase >= 3) return { ...base,
+      left: isMobile ? "50%" : "7%",
       top:"50%",
       transform: isMobile
         ? "translate(-50%,-50%) scale(1) rotateX(2deg)"
         : "translate(0,-50%) scale(1) rotateX(2deg)",
-      transition:"transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1), top 1.0s cubic-bezier(0.4,0,0.2,1)" };
+    };
     return base;
   })();
 
   // Cover rotation
-  const coverOpen = phase === 1 || phase === 2;
-  const coverRot = coverOpen ? "rotateY(-150deg)" : "rotateY(0deg)";
+  const coverRot = phase === 1 ? "rotateY(-155deg)" : "rotateY(0deg)";
+  const coverTransition = phase === 2
+    ? "transform 0.75s cubic-bezier(0.6,0,0.4,1)"
+    : "transform 1.0s cubic-bezier(0.4,0,0.2,1)";
 
   return (
     <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
@@ -876,115 +883,86 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
       <link href={FONT_LINK} rel="stylesheet" />
 
       {/* Book */}
-      <div style={bookStyle}>
-        <div style={{ position:"relative", width:BW*2+SPINE, height:BH }}>
+      <div style={{ ...wrapperStyle, position:"absolute" }}>
+        <div style={{ position:"relative", width:BW + SPINE, height:BH, transformStyle:"preserve-3d", perspective:1200 }}>
 
-          {/* Left page — inner spread */}
+          {/* Inner page — visible when cover is open */}
           <div style={{ position:"absolute", left:0, top:0, width:BW, height:BH,
-            background:"#fffef9", borderRadius:"8px 0 0 8px",
-            boxShadow:"-3px 4px 20px rgba(74,48,104,0.10)",
-            display:"flex", flexDirection:"column", alignItems:"center",
-            justifyContent:"space-between", padding:"14px 12px",
-            opacity: phase>=1 ? 1:0, transition:"opacity 0.4s ease 0.5s" }}>
-            <div style={{ fontSize:8, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.35 }}>01</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, width:"100%" }}>
-              <div style={{ background:`${PASTEL_PURPLE}20`, borderRadius:4, height:BH*0.22, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.08, gridColumn:"1/-1" }}>🌅</div>
-              <div style={{ background:`${SOFT_PINK}40`, borderRadius:4, height:BH*0.17, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.07 }}>🌸</div>
-              <div style={{ background:`${PASTEL_PURPLE}15`, borderRadius:4, height:BH*0.17, display:"flex", alignItems:"center", justifyContent:"center", fontSize:BH*0.07 }}>✨</div>
-            </div>
-            <div style={{ fontSize:8, letterSpacing:2, textTransform:"uppercase", color:DEEP_PURPLE, opacity:0.3, fontFamily:"'Playfair Display',serif" }}>
-              {t("Our Memories","ذكرياتنا")}
-            </div>
+            borderRadius:"6px 0 0 6px", overflow:"hidden",
+            opacity: phase === 1 ? 1 : 0,
+            transition:"opacity 0.3s ease 0.4s" }}>
+            <img src="/books/miora-inner.jpg" alt="inner page"
+              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
           </div>
 
           {/* Spine */}
           <div style={{ position:"absolute", left:BW-1, top:0, width:SPINE+2, height:BH, zIndex:5,
-            background:"linear-gradient(to right,#d4a8bc,#e8c4d4,#d0a0b8)",
+            background:"linear-gradient(to right,#a080c8,#c8b0e8,#a080c8)",
             display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <div style={{ fontSize:6, letterSpacing:3, textTransform:"uppercase",
-              color:"#a07888", writingMode:"vertical-rl", transform:"rotate(180deg)", opacity:0.6,
-              fontFamily:"'Playfair Display',serif" }}>Miora</div>
+            <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
+              fontSize:7, fontWeight:700, letterSpacing:2, textTransform:"uppercase",
+              color:"white", opacity:0.7, fontFamily:"'Quicksand',sans-serif" }}>
+              Miora
+            </div>
           </div>
 
-          {/* Front cover */}
-          <div style={{ position:"absolute", left:BW+SPINE, top:0, width:BW, height:BH,
+          {/* Front cover — real image, animates open/close */}
+          <div style={{ position:"absolute", left:BW + SPINE - 1, top:0, width:BW, height:BH,
             transformOrigin:"left center", transformStyle:"preserve-3d",
             transform: coverRot,
-            transition: phase===3
-              ? "transform 0.7s cubic-bezier(0.6,0,0.4,1)"
-              : "transform 0.9s cubic-bezier(0.4,0,0.2,1)",
-            borderRadius:"0 8px 8px 0",
-            boxShadow: coverOpen ? "none" : "5px 5px 28px rgba(74,48,104,0.20)" }}>
-
+            transition: coverTransition,
+            borderRadius:"0 6px 6px 0",
+            boxShadow: phase === 1 ? "none" : "6px 6px 28px rgba(74,48,104,0.22)" }}>
             {/* Front face */}
-            <div style={{ position:"absolute", inset:0, background:"#fff0f5",
-              borderRadius:"0 8px 8px 0", backfaceVisibility:"hidden",
-              display:"flex", flexDirection:"column", alignItems:"center",
-              justifyContent:"center", padding:"16px 12px", overflow:"hidden" }}>
-              <div style={{ position:"absolute", left:0, top:0, bottom:0, width:12,
-                background:"linear-gradient(to right,rgba(200,160,180,0.5),transparent)" }} />
-              <div style={{ fontFamily:"'Playfair Display',serif",
-                fontSize:isMobile?15:20, fontWeight:700, color:"#c0506a",
-                textAlign:"center", lineHeight:1.25, marginBottom:6 }}>
-                A Year<br/>to<br/>Remember
-              </div>
-              <div style={{ fontSize:isMobile?6:7, letterSpacing:3, textTransform:"uppercase",
-                color:"#c0506a", opacity:0.45, marginBottom:10 }}>
-                {t("Photo Album","ألبوم صور")}
-              </div>
-              <svg width={isMobile?60:80} height={isMobile?60:80} viewBox="0 0 80 80" fill="none">
-                <circle cx="40" cy="40" r="20" fill="#f4a0b8" opacity="0.22"/>
-                <ellipse cx="40" cy="31" rx="8" ry="11" fill="#e87898" opacity="0.85"/>
-                <ellipse cx="31" cy="39" rx="8" ry="11" fill="#d45878" opacity="0.7" transform="rotate(-30 31 39)"/>
-                <ellipse cx="49" cy="39" rx="8" ry="11" fill="#e87898" opacity="0.7" transform="rotate(30 49 39)"/>
-                <ellipse cx="40" cy="49" rx="8" ry="11" fill="#f09ab4" opacity="0.85"/>
-                <ellipse cx="40" cy="40" rx="7" ry="7" fill="#c04068"/>
-                <ellipse cx="26" cy="57" rx="5" ry="9" fill="#88b878" opacity="0.65" transform="rotate(-20 26 57)"/>
-                <ellipse cx="54" cy="57" rx="5" ry="9" fill="#68a858" opacity="0.65" transform="rotate(20 54 57)"/>
-              </svg>
+            <div style={{ position:"absolute", inset:0, backfaceVisibility:"hidden",
+              borderRadius:"0 6px 6px 0", overflow:"hidden" }}>
+              <img src="/books/miora-cover.png" alt="Miora cover"
+                style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+              {/* Spine shadow on cover edge */}
+              <div style={{ position:"absolute", left:0, top:0, bottom:0, width:10,
+                background:"linear-gradient(to right,rgba(0,0,0,0.15),transparent)" }} />
             </div>
-            {/* Back face */}
-            <div style={{ position:"absolute", inset:0, background:"#f8e8ef",
-              borderRadius:"0 8px 8px 0", backfaceVisibility:"hidden", transform:"rotateY(180deg)",
-              display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <div style={{ fontSize:7, letterSpacing:3, textTransform:"uppercase",
-                color:"#c0506a", opacity:0.35, fontFamily:"'Playfair Display',serif", textAlign:"center" }}>
-                Miora<br/>by Layal
-              </div>
+            {/* Back face of cover (back cover = same as inner) */}
+            <div style={{ position:"absolute", inset:0, backfaceVisibility:"hidden",
+              transform:"rotateY(180deg)", borderRadius:"0 6px 6px 0", overflow:"hidden",
+              background:"#f8f4ff" }}>
+              <img src="/books/miora-inner.jpg" alt="back"
+                style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:0.6 }} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Hero content — fades in on the right after reveal (desktop) or below (mobile) */}
+      {/* Hero content — fades in after book moves left */}
       <div style={{
         position:"absolute",
-        left: isMobile ? 0 : "calc(8% + " + (BW*2+SPINE+40) + "px)",
+        left: isMobile ? 0 : `calc(7% + ${BW + SPINE + 40}px)`,
         right: 0,
         top: isMobile ? "auto" : "50%",
         bottom: isMobile ? 0 : "auto",
-        transform: (!isMobile && phase>=4) ? "translateY(-50%)" : isMobile ? "none" : "translateY(-40%)",
+        transform: !isMobile ? "translateY(-50%)" : "none",
         padding: isMobile ? "0 24px 48px" : "0 40px",
         opacity: phase >= 4 ? 1 : 0,
-        transition: "opacity 0.8s ease, transform 0.8s ease",
+        transition:"opacity 0.9s ease",
         textAlign: isMobile ? "center" : "left",
         pointerEvents: phase >= 4 ? "auto" : "none",
-        zIndex: 10,
+        zIndex:10,
       }}>
         <div style={{ fontFamily:"'Londrina Solid',cursive",
-          fontSize:isMobile?"clamp(40px,12vw,60px)":"clamp(40px,5vw,72px)",
+          fontSize: isMobile ? "clamp(40px,12vw,60px)" : "clamp(40px,5vw,68px)",
           color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4 }}>MIORA</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:isMobile?11:14,
+        <div style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 11 : 14,
           color:DARK_PURPLE, opacity:0.45, letterSpacing:6, textTransform:"uppercase", marginBottom:16 }}>
           by Layal
         </div>
-        <p style={{ fontSize:isMobile?14:17, maxWidth:360, lineHeight:1.75,
+        <p style={{ fontSize: isMobile ? 14 : 17, maxWidth:360, lineHeight:1.75,
           color:DARK_PURPLE, opacity:0.7, fontWeight:300, marginBottom:28 }}>
           {t("Beautiful photo albums for life's most precious moments.",
              "ألبومات صور جميلة لأغلى لحظات الحياة.")}
         </p>
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent: isMobile ? "center" : "flex-start" }}>
-          <HeroBtn label={t("Start Creating","ابدأ التصميم")} primary
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap",
+          justifyContent: isMobile ? "center" : "flex-start" }}>
+          <HeroBtn label={t("Start Designing","ابدأ التصميم")} primary
             onClick={() => document.getElementById("create-section")?.scrollIntoView({behavior:"smooth"})} />
           {projects.length > 0 && (
             <HeroBtn label={t(`My Projects (${projects.length})`,`مشاريعي (${projects.length})`)}
@@ -1004,6 +982,7 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
     </section>
   );
 }
+
 
 // ─── Occasion Books Showcase ──────────────────────────────────────────────────
 // Styled to match Layal's real books: bold title top, illustration center,
