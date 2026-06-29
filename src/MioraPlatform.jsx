@@ -382,6 +382,9 @@ export default function MioraPlatform() {
     <div dir={dir} style={{ fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:WARM_WHITE, minHeight:"100vh", overflowX:"hidden" }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
+      {/* Global floating interactive books — fixed overlay over entire site */}
+      <FloatingBooksLayer />
+
       {/* Save Toast */}
       {saveToast && (
         <div style={{ position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)", zIndex:300,
@@ -655,6 +658,193 @@ const LAYAL_BOOK_IMAGES = {
   sit_alkol:     { src: "/books/book-sit-alkol.png",     occasion: "Family",      title: "ست الكل" },
 };
 
+// ─── Global Floating Books Layer ──────────────────────────────────────────────
+// Fixed overlay over the entire site. Books float upward continuously.
+// On desktop: click to grab, release to throw with momentum.
+// On mobile: touch and drag to grab and throw.
+function FloatingBooksLayer() {
+  const [books, setBooks] = useState([]);
+  const bookRefs = useRef({});
+  const dragState = useRef(null); // { id, startX, startY, lastX, lastY, vx, vy, interval }
+
+  const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
+  let spawnIdx = useRef(0);
+
+  // Spawn books continuously
+  useEffect(() => {
+    const spawn = () => {
+      const id = "fb-" + generateId();
+      const key = bookKeys[spawnIdx.current % bookKeys.length];
+      spawnIdx.current++;
+      const book = LAYAL_BOOK_IMAGES[key];
+      const scale = 0.28 + Math.random() * 0.16;
+      const tilt  = (Math.random() - 0.5) * 18;
+      const left  = 2 + Math.random() * 90;
+      const duration = 11 + Math.random() * 9;
+      const delay = Math.random() * 1.5;
+      setBooks(prev => [...prev.slice(-14), {
+        id, book, scale, tilt, left, duration, delay,
+        x: null, y: null, // null = CSS animation mode
+        grabbed: false, vx: 0, vy: 0,
+      }]);
+      setTimeout(() => {
+        setBooks(prev => prev.filter(b => b.id !== id));
+      }, (duration + delay + 2) * 1000);
+    };
+    // Stagger initial batch
+    [0,1,2,3,4].forEach(i => setTimeout(spawn, i * 800));
+    const iv = setInterval(spawn, 3500);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Physics loop for thrown books
+  useEffect(() => {
+    let rafId;
+    const tick = () => {
+      setBooks(prev => prev.map(b => {
+        if (b.x === null || b.grabbed) return b;
+        // Apply velocity + gravity drift
+        let { x, y, vx, vy } = b;
+        vx *= 0.94;
+        vy *= 0.94;
+        vy -= 0.15; // gentle upward drift after throw
+        x += vx;
+        y += vy;
+        // If off screen, remove CSS override and let it float again
+        if (y < -400 || y > window.innerHeight + 200 || x < -300 || x > window.innerWidth + 300) {
+          return { ...b, x: null, y: null, vx: 0, vy: 0 };
+        }
+        return { ...b, x, y, vx, vy };
+      }));
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const startDrag = (id, clientX, clientY) => {
+    const book = books.find(b => b.id === id);
+    if (!book) return;
+    // Switch from CSS animation to JS-controlled position
+    const el = bookRefs.current[id];
+    let startX = clientX, startY = clientY;
+    let posX = book.x, posY = book.y;
+    if (posX === null && el) {
+      const rect = el.getBoundingClientRect();
+      posX = rect.left;
+      posY = rect.top;
+    }
+    setBooks(prev => prev.map(b => b.id === id
+      ? { ...b, grabbed: true, x: posX, y: posY, vx: 0, vy: 0 }
+      : b));
+    const velocityHistory = [];
+    dragState.current = {
+      id, startX, startY, lastX: clientX, lastY: clientY,
+      posX, posY, velocityHistory,
+    };
+  };
+
+  const onDrag = (clientX, clientY) => {
+    if (!dragState.current) return;
+    const { id, lastX, lastY, posX, posY } = dragState.current;
+    const dx = clientX - lastX;
+    const dy = clientY - lastY;
+    dragState.current.posX = posX + (clientX - dragState.current.startX);
+    dragState.current.posY = posY + (clientY - dragState.current.startY);
+    dragState.current.lastX = clientX;
+    dragState.current.lastY = clientY;
+    dragState.current.velocityHistory.push({ vx: dx, vy: dy, t: Date.now() });
+    if (dragState.current.velocityHistory.length > 8) {
+      dragState.current.velocityHistory.shift();
+    }
+    setBooks(prev => prev.map(b => b.id === id
+      ? { ...b, x: dragState.current.posX, y: dragState.current.posY }
+      : b));
+  };
+
+  const endDrag = () => {
+    if (!dragState.current) return;
+    const { id, velocityHistory } = dragState.current;
+    // Average recent velocity for throw
+    const recent = velocityHistory.filter(v => Date.now() - v.t < 150);
+    const vx = recent.length ? recent.reduce((a,v) => a + v.vx, 0) / recent.length * 2.5 : 0;
+    const vy = recent.length ? recent.reduce((a,v) => a + v.vy, 0) / recent.length * 2.5 : 0;
+    setBooks(prev => prev.map(b => b.id === id
+      ? { ...b, grabbed: false, vx, vy }
+      : b));
+    dragState.current = null;
+  };
+
+  // Global mouse/touch move + end listeners
+  useEffect(() => {
+    const onMouseMove = e => onDrag(e.clientX, e.clientY);
+    const onTouchMove = e => { e.preventDefault(); onDrag(e.touches[0].clientX, e.touches[0].clientY); };
+    const onEnd = () => endDrag();
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onEnd);
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [books]);
+
+  return (
+    <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:50, overflow:"hidden" }}>
+      <style>{`
+        @keyframes bookFloatGlobal {
+          0%   { transform: translateY(0vh) rotate(var(--btilt)); opacity: 0; }
+          6%   { opacity: 0.75; }
+          92%  { opacity: 0.75; }
+          100% { transform: translateY(-115vh) rotate(var(--btilt)); opacity: 0; }
+        }
+      `}</style>
+      {books.map(b => {
+        const H = 220 * b.scale;
+        const isJS = b.x !== null;
+        return (
+          <img
+            key={b.id}
+            ref={el => { bookRefs.current[b.id] = el; }}
+            src={b.book.src}
+            alt={b.book.title}
+            draggable={false}
+            onMouseDown={e => { e.stopPropagation(); startDrag(b.id, e.clientX, e.clientY); }}
+            onTouchStart={e => { e.stopPropagation(); startDrag(b.id, e.touches[0].clientX, e.touches[0].clientY); }}
+            style={{
+              position: "fixed",
+              pointerEvents: "auto",
+              userSelect: "none",
+              height: H,
+              width: "auto",
+              cursor: b.grabbed ? "grabbing" : "grab",
+              // CSS animation mode (floating upward)
+              ...(isJS ? {
+                left: b.x,
+                top: b.y,
+                transform: `rotate(${b.tilt}deg) scale(${b.grabbed ? 1.06 : 1})`,
+                transition: b.grabbed ? "transform 0.1s ease" : "none",
+                opacity: 0.78,
+              } : {
+                left: `${b.left}%`,
+                bottom: "-5%",
+                "--btilt": `${b.tilt}deg`,
+                animation: `bookFloatGlobal ${b.duration}s ease ${b.delay}s forwards`,
+                opacity: 0,
+              }),
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 // Phases:
 //  0  intro     — book fills screen (scale ~2.5), cover closed,  0 → 0.8s
 //  1  open      — cover swings open while still large,           0.8 → 2.0s
@@ -663,7 +853,6 @@ const LAYAL_BOOK_IMAGES = {
 //  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
 function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
   const [phase, setPhase] = useState(0);
-  const [floatingBooks, setFloatingBooks] = useState([]);
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 800);
@@ -672,31 +861,6 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
     const t4 = setTimeout(() => setPhase(4), 3600);
     return () => [t1,t2,t3,t4].forEach(clearTimeout);
   }, []);
-
-  // Floating Layal's real book images — spawn after reveal, drift upward slowly
-  useEffect(() => {
-    if (phase < 4) return;
-    const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
-    let bookIdx = 0;
-    const spawn = () => {
-      const id = generateId();
-      const key = bookKeys[bookIdx % bookKeys.length];
-      bookIdx++;
-      const book = LAYAL_BOOK_IMAGES[key];
-      const scale = 0.32 + Math.random() * 0.18;
-      const duration = 10 + Math.random() * 8;
-      const delay = Math.random() * 2;
-      const tilt = (Math.random() - 0.5) * 16;
-      const left = 2 + Math.random() * 92;
-      const b = { id, book, scale, duration, delay, tilt, left };
-      setFloatingBooks(prev => [...prev.slice(-10), b]);
-      setTimeout(() => setFloatingBooks(prev => prev.filter(x => x.id !== id)),
-        (duration + delay + 1) * 1000);
-    };
-    [0,1,2,3].forEach(i => setTimeout(spawn, i * 700));
-    const iv = setInterval(spawn, 3200);
-    return () => clearInterval(iv);
-  }, [phase]);
 
   // Book geometry
   const BW = isMobile ? 140 : 200; // single cover width
@@ -733,21 +897,6 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
     <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
       background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
       <link href={FONT_LINK} rel="stylesheet" />
-
-      {/* Floating Layal's real books */}
-      <div style={{ position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden" }}>
-        {floatingBooks.map(b => (
-          <img key={b.id} src={b.book.src} alt={b.book.title}
-            style={{
-              position:"absolute", bottom:"-5%", left:`${b.left}%`,
-              height: 280 * b.scale,
-              width:"auto",
-              animation:`bookFloat ${b.duration}s ease ${b.delay}s forwards`,
-              opacity:0,
-              transform:`rotate(${b.tilt}deg)`,
-            }} />
-        ))}
-      </div>
 
       {/* Book */}
       <div style={bookStyle}>
@@ -1004,216 +1153,56 @@ function makeCoverPages(frontBg, frontElements, backBg = "#ffffff", backElements
 }
 
 const TEMPLATE_LIBRARY = [
-  // ── WEDDING ──────────────────────────────────────────────────────────────
-  {
-    id: "w1", occasion: "Wedding", title: "Our Wedding Day",
-    coverBg: "#fff0f5", spineColor: "#e8c0d0", titleColor: "#c0506a",
-    desc: "Classic floral pink",
-    pages: [
-      ...makeCoverPages("#fff0f5", [
-        { id:"e1", type:"text", content:"OUR\nWEDDING\nDAY", x:30, y:30, w:340, h:120, font:"Londrina Solid", fontSize:52, color:"#c0506a", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"text", content:"Est. 2026", x:120, y:160, w:160, h:36, font:"Dancing Script", fontSize:22, color:"#c0506a", bold:false, italic:true, rotation:0 },
-        { id:"e3", type:"sticker", content:"🌹", x:280, y:140, w:70, h:70, rotation:-15 },
-        { id:"e4", type:"sticker", content:"💐", x:20, y:140, w:60, h:60, rotation:12 },
-        { id:"e5", type:"sticker", content:"✨", x:310, y:260, w:45, h:45, rotation:0 },
-        { id:"e6", type:"sticker", content:"🌸", x:10, y:260, w:45, h:45, rotation:-8 },
-        { id:"e7", type:"text", content:"photo album", x:120, y:470, w:160, h:30, font:"Quicksand", fontSize:12, color:"#c0506a", bold:false, italic:false, rotation:0 },
-      ], "#f8e8ef", [
-        { id:"b1", type:"text", content:"Thank you for\nbeing part of\nour story ♥", x:40, y:180, w:320, h:120, font:"Dancing Script", fontSize:28, color:"#c0506a", bold:false, italic:true, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
-  {
-    id: "w2", occasion: "Wedding", title: "Forever & Always",
-    coverBg: "#f5f0ff", spineColor: "#d0b8f0", titleColor: "#7B5EA7",
-    desc: "Elegant purple",
-    pages: [
-      ...makeCoverPages("#f5f0ff", [
-        { id:"e1", type:"text", content:"FOREVER\n& ALWAYS", x:20, y:20, w:360, h:100, font:"Playfair Display", fontSize:44, color:"#4A3068", bold:true, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"💍", x:150, y:140, w:100, h:100, rotation:0 },
-        { id:"e3", type:"sticker", content:"🕊️", x:40, y:160, w:60, h:60, rotation:-10 },
-        { id:"e4", type:"sticker", content:"🕊️", x:300, y:160, w:60, h:60, rotation:10 },
-        { id:"e5", type:"text", content:"2026", x:160, y:260, w:80, h:36, font:"Quicksand", fontSize:18, color:"#7B5EA7", bold:false, italic:false, rotation:0 },
-        { id:"e6", type:"sticker", content:"✨", x:20, y:400, w:50, h:50, rotation:0 },
-        { id:"e7", type:"sticker", content:"✨", x:330, y:420, w:50, h:50, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — Italy ───────────────────────────────────────────────────────
+  { id:"tpl-italy1",   occasion:"Travel",     title:"Italy 2026",          desc:"Blue Vespa",          coverImg:"/books/book-italy_vespa.png",         pages:[...makeCoverPages("#6a9bb5","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL ───────────────────────────────────────────────────────────────
-  {
-    id: "t1", occasion: "Travel", title: "Our Adventure",
-    coverBg: "#e8f4f0", spineColor: "#88c8b0", titleColor: "#1a7a5a",
-    desc: "Mint green explorer",
-    pages: [
-      ...makeCoverPages("#e8f4f0", [
-        { id:"e1", type:"text", content:"OUR\nADVENTURE", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:56, color:"#1a7a5a", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"text", content:"2026", x:160, y:140, w:80, h:36, font:"Quicksand", fontSize:20, color:"#1a7a5a", bold:true, italic:false, rotation:0 },
-        { id:"e3", type:"sticker", content:"✈️", x:160, y:200, w:80, h:80, rotation:-15 },
-        { id:"e4", type:"sticker", content:"🗺️", x:30, y:320, w:70, h:70, rotation:8 },
-        { id:"e5", type:"sticker", content:"📸", x:290, y:300, w:65, h:65, rotation:-5 },
-        { id:"e6", type:"sticker", content:"⭐", x:20, y:180, w:40, h:40, rotation:0 },
-        { id:"e7", type:"sticker", content:"⭐", x:340, y:180, w:40, h:40, rotation:0 },
-        { id:"e8", type:"text", content:"memories from around the world", x:40, y:460, w:320, h:30, font:"Quicksand", fontSize:11, color:"#1a7a5a", bold:false, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
-  {
-    id: "t2", occasion: "Travel", title: "Solo Trip",
-    coverBg: "#fffafa", spineColor: "#f4c0c8", titleColor: "#e06080",
-    desc: "Solo traveller pink",
-    pages: [
-      ...makeCoverPages("#fffafa", [
-        { id:"e1", type:"text", content:"SOLO\nTRIP", x:30, y:20, w:340, h:110, font:"Londrina Solid", fontSize:70, color:"#e06080", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"text", content:"LOCATION", x:120, y:138, w:160, h:32, font:"Quicksand", fontSize:16, color:"#c04060", bold:true, italic:false, rotation:0 },
-        { id:"e3", type:"sticker", content:"🧳", x:120, y:240, w:160, h:160, rotation:0 },
-        { id:"e4", type:"sticker", content:"✈️", x:130, y:320, w:50, h:50, rotation:-20 },
-        { id:"e5", type:"sticker", content:"🌸", x:290, y:380, w:50, h:50, rotation:10 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — Egypt ───────────────────────────────────────────────────────
+  { id:"tpl-egypt1",   occasion:"Travel",     title:"أم الدنيا",           desc:"Egypt Pyramids",       coverImg:"/books/book-egypt_pyramids.png",      pages:[...makeCoverPages("#f5ecd7","#fff"), ...makeBlankPages(14)] },
 
-  // ── BIRTHDAY ─────────────────────────────────────────────────────────────
-  {
-    id: "b1", occasion: "Birthday", title: "Happy Birthday",
-    coverBg: "#fff8e0", spineColor: "#f4d060", titleColor: "#b8860b",
-    desc: "Golden celebration",
-    pages: [
-      ...makeCoverPages("#fff8e0", [
-        { id:"e1", type:"text", content:"HAPPY\nBIRTHDAY", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:56, color:"#b8860b", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"🎂", x:130, y:160, w:140, h:140, rotation:0 },
-        { id:"e3", type:"sticker", content:"🎉", x:20, y:180, w:70, h:70, rotation:-15 },
-        { id:"e4", type:"sticker", content:"🎈", x:300, y:160, w:65, h:65, rotation:12 },
-        { id:"e5", type:"sticker", content:"🎊", x:20, y:380, w:60, h:60, rotation:8 },
-        { id:"e6", type:"sticker", content:"🎁", x:300, y:370, w:65, h:65, rotation:-10 },
-        { id:"e7", type:"text", content:"make a wish", x:110, y:330, w:180, h:30, font:"Dancing Script", fontSize:20, color:"#b8860b", bold:false, italic:true, rotation:0 },
-        { id:"e8", type:"text", content:"✨ 2026 ✨", x:130, y:460, w:140, h:30, font:"Quicksand", fontSize:14, color:"#b8860b", bold:false, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
-  {
-    id: "b2", occasion: "Birthday", title: "Birthday Memories",
-    coverBg: "#fdf0ff", spineColor: "#d0a0f0", titleColor: "#8040b0",
-    desc: "Purple party",
-    pages: [
-      ...makeCoverPages("#fdf0ff", [
-        { id:"e1", type:"text", content:"BIRTHDAY\nMEMORIES", x:20, y:20, w:360, h:110, font:"Londrina Solid", fontSize:50, color:"#8040b0", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"🎂", x:140, y:150, w:120, h:120, rotation:0 },
-        { id:"e3", type:"sticker", content:"🎈", x:20, y:140, w:80, h:80, rotation:-10 },
-        { id:"e4", type:"sticker", content:"🎈", x:300, y:140, w:80, h:80, rotation:10 },
-        { id:"e5", type:"sticker", content:"🎉", x:30, y:360, w:70, h:70, rotation:0 },
-        { id:"e6", type:"sticker", content:"🎊", x:290, y:360, w:70, h:70, rotation:0 },
-        { id:"e7", type:"text", content:"another year of amazing memories", x:20, y:458, w:360, h:30, font:"Quicksand", fontSize:10, color:"#8040b0", bold:false, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — Miles & Memories ────────────────────────────────────────────
+  { id:"tpl-miles2",   occasion:"Travel",     title:"Miles & Memories",    desc:"World Map Pink",       coverImg:"/books/book-miles_memories2.png",     pages:[...makeCoverPages("#f5eeee","#fff"), ...makeBlankPages(14)] },
 
-  // ── BABY SHOWER ──────────────────────────────────────────────────────────
-  {
-    id: "bs1", occasion: "Baby Shower", title: "Baby's First Year",
-    coverBg: "#f0f8ff", spineColor: "#b8d8f0", titleColor: "#5b8fc9",
-    desc: "Baby blue",
-    pages: [
-      ...makeCoverPages("#f0f8ff", [
-        { id:"e1", type:"text", content:"BABY'S\nFIRST\nYEAR", x:20, y:15, w:360, h:130, font:"Londrina Solid", fontSize:54, color:"#5b8fc9", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"🍼", x:30, y:200, w:80, h:80, rotation:-12 },
-        { id:"e3", type:"sticker", content:"👶", x:150, y:190, w:100, h:100, rotation:0 },
-        { id:"e4", type:"sticker", content:"🧸", x:290, y:200, w:80, h:80, rotation:10 },
-        { id:"e5", type:"sticker", content:"🌙", x:20, y:380, w:60, h:60, rotation:0 },
-        { id:"e6", type:"sticker", content:"⭐", x:310, y:360, w:60, h:60, rotation:0 },
-        { id:"e7", type:"text", content:"a new adventure begins", x:60, y:320, w:280, h:30, font:"Dancing Script", fontSize:20, color:"#5b8fc9", bold:false, italic:true, rotation:0 },
-        { id:"e8", type:"text", content:"2026", x:170, y:470, w:60, h:28, font:"Quicksand", fontSize:14, color:"#5b8fc9", bold:true, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — Dubai ───────────────────────────────────────────────────────
+  { id:"tpl-dxb1",     occasion:"Travel",     title:"Dubai",               desc:"Burj Khalifa",         coverImg:"/books/book-dubai_khalifa.png",       pages:[...makeCoverPages("#c8eeea","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-dxb2",     occasion:"Travel",     title:"Dubai UAE",           desc:"Burj Al Arab",         coverImg:"/books/book-dubai_arab.png",          pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
 
-  // ── GRADUATION ───────────────────────────────────────────────────────────
-  {
-    id: "g1", occasion: "Graduation", title: "Graduation Day",
-    coverBg: "#f4f0ff", spineColor: "#c0b0f0", titleColor: "#6040c0",
-    desc: "Classic purple cap",
-    pages: [
-      ...makeCoverPages("#f4f0ff", [
-        { id:"e1", type:"text", content:"CLASS OF\n2026", x:30, y:20, w:340, h:110, font:"Londrina Solid", fontSize:58, color:"#4A3068", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"🎓", x:140, y:160, w:120, h:120, rotation:0 },
-        { id:"e3", type:"sticker", content:"⭐", x:30, y:180, w:60, h:60, rotation:-8 },
-        { id:"e4", type:"sticker", content:"⭐", x:310, y:180, w:60, h:60, rotation:8 },
-        { id:"e5", type:"sticker", content:"🏆", x:40, y:330, w:70, h:70, rotation:0 },
-        { id:"e6", type:"sticker", content:"📚", x:280, y:330, w:70, h:70, rotation:0 },
-        { id:"e7", type:"text", content:"the journey continues", x:70, y:440, w:260, h:30, font:"Dancing Script", fontSize:20, color:"#6040c0", bold:false, italic:true, rotation:0 },
-        { id:"e8", type:"text", content:"Congratulations!", x:70, y:470, w:260, h:28, font:"Quicksand", fontSize:14, color:"#6040c0", bold:true, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — Japan ───────────────────────────────────────────────────────
+  { id:"tpl-jp1",      occasion:"Travel",     title:"Japan 2025",          desc:"Pink Lantern",         coverImg:"/books/book-japan_lantern_2025.png",  pages:[...makeCoverPages("#f4a0b0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-jp2",      occasion:"Travel",     title:"Japan 2025",          desc:"Mt Fuji & Red Sun",    coverImg:"/books/book-japan_fuji_red.png",      pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-jp3",      occasion:"Travel",     title:"Kyoto Japan",         desc:"Mt Fuji Classic",      coverImg:"/books/book-kyoto_fuji.png",          pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
 
-  // ── FAMILY ───────────────────────────────────────────────────────────────
-  {
-    id: "f1", occasion: "Family", title: "Our Family Story",
-    coverBg: "#fff5e8", spineColor: "#f4c090", titleColor: "#c86020",
-    desc: "Warm terracotta",
-    pages: [
-      ...makeCoverPages("#fff5e8", [
-        { id:"e1", type:"text", content:"OUR\nFAMILY\nSTORY", x:30, y:15, w:340, h:130, font:"Londrina Solid", fontSize:54, color:"#c86020", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"🏡", x:130, y:180, w:140, h:140, rotation:0 },
-        { id:"e3", type:"sticker", content:"❤️", x:30, y:200, w:65, h:65, rotation:-8 },
-        { id:"e4", type:"sticker", content:"❤️", x:300, y:200, w:65, h:65, rotation:8 },
-        { id:"e5", type:"sticker", content:"💕", x:40, y:360, w:60, h:60, rotation:0 },
-        { id:"e6", type:"sticker", content:"💕", x:290, y:360, w:60, h:60, rotation:0 },
-        { id:"e7", type:"text", content:"together is our favourite place", x:30, y:455, w:340, h:30, font:"Dancing Script", fontSize:18, color:"#c86020", bold:false, italic:true, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── TRAVEL — London ──────────────────────────────────────────────────────
+  { id:"tpl-ldn1",     occasion:"Travel",     title:"London UK",           desc:"Dark Navy Phone Box",  coverImg:"/books/book-london_dark_box.png",     pages:[...makeCoverPages("#1a1a5e","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn2",     occasion:"Travel",     title:"London UK",           desc:"Pink Phone Box",       coverImg:"/books/book-london_pink_box1.png",    pages:[...makeCoverPages("#f4b8d0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn3",     occasion:"Travel",     title:"London UK",           desc:"Pink Phone Box Alt",   coverImg:"/books/book-london_pink_box2.png",    pages:[...makeCoverPages("#f4b8d0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn4",     occasion:"Travel",     title:"London UK",           desc:"White Phone Box",      coverImg:"/books/book-london_white_box.png",    pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn5",     occasion:"Travel",     title:"London UK",           desc:"London Eye",           coverImg:"/books/book-london_eye.png",          pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn6",     occasion:"Travel",     title:"London UK",           desc:"Double Decker Blue",   coverImg:"/books/book-london_bus_blue.png",     pages:[...makeCoverPages("#dde8f5","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ldn7",     occasion:"Travel",     title:"London UK",           desc:"Big Ben & Bus",        coverImg:"/books/book-london_bigben.png",       pages:[...makeCoverPages("#f8f0e0","#fff"), ...makeBlankPages(14)] },
 
-  // ── ANNIVERSARY ──────────────────────────────────────────────────────────
-  {
-    id: "a1", occasion: "Anniversary", title: "Our Anniversary",
-    coverBg: "#fff0f5", spineColor: "#f4b0c8", titleColor: "#c0506a",
-    desc: "Romantic rose",
-    pages: [
-      ...makeCoverPages("#fff0f5", [
-        { id:"e1", type:"text", content:"FOREVER\nTOGETHER", x:20, y:20, w:360, h:110, font:"Playfair Display", fontSize:42, color:"#c0506a", bold:true, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"❤️", x:160, y:160, w:80, h:80, rotation:0 },
-        { id:"e3", type:"sticker", content:"🌹", x:30, y:160, w:70, h:70, rotation:-10 },
-        { id:"e4", type:"sticker", content:"🌹", x:300, y:160, w:70, h:70, rotation:10 },
-        { id:"e5", type:"sticker", content:"🥂", x:40, y:360, w:70, h:70, rotation:0 },
-        { id:"e6", type:"sticker", content:"🥂", x:280, y:360, w:70, h:70, rotation:0 },
-        { id:"e7", type:"text", content:"years of love & laughter", x:60, y:280, w:280, h:30, font:"Dancing Script", fontSize:22, color:"#c0506a", bold:false, italic:true, rotation:0 },
-        { id:"e8", type:"text", content:"2026", x:170, y:460, w:60, h:28, font:"Quicksand", fontSize:16, color:"#c0506a", bold:true, italic:false, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── FRIENDSHIP ───────────────────────────────────────────────────────────
+  { id:"tpl-bff1",     occasion:"Friendship", title:"Best Friends Forever", desc:"Heart Polaroid",      coverImg:"/books/book-best_friends.png",        pages:[...makeCoverPages("#f8f0e8","#fff"), ...makeBlankPages(14)] },
 
-  // ── ENGAGEMENT ───────────────────────────────────────────────────────────
-  {
-    id: "en1", occasion: "Engagement", title: "She Said Yes!",
-    coverBg: "#fdf0ff", spineColor: "#d0a0f0", titleColor: "#8040b0",
-    desc: "Lilac proposal",
-    pages: [
-      ...makeCoverPages("#fdf0ff", [
-        { id:"e1", type:"text", content:"SHE SAID\nYES!", x:30, y:20, w:340, h:120, font:"Londrina Solid", fontSize:58, color:"#8040b0", bold:false, italic:false, rotation:0 },
-        { id:"e2", type:"sticker", content:"💍", x:150, y:170, w:100, h:100, rotation:0 },
-        { id:"e3", type:"sticker", content:"✨", x:30, y:180, w:60, h:60, rotation:0 },
-        { id:"e4", type:"sticker", content:"✨", x:310, y:180, w:60, h:60, rotation:0 },
-        { id:"e5", type:"sticker", content:"💐", x:30, y:340, w:80, h:80, rotation:-8 },
-        { id:"e6", type:"sticker", content:"💕", x:290, y:350, w:70, h:70, rotation:8 },
-        { id:"e7", type:"text", content:"the beginning of forever", x:50, y:450, w:300, h:30, font:"Dancing Script", fontSize:20, color:"#8040b0", bold:false, italic:true, rotation:0 },
-      ]),
-      ...makeBlankPages(14),
-    ],
-  },
+  // ── WEDDING — Japan Honeymoon ─────────────────────────────────────────────
+  { id:"tpl-honey1",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Lantern & Blossoms",   coverImg:"/books/book-japan_lantern_honey.png", pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey2",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Flower",coverImg:"/books/book-japan_flower_honey.png",  pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey3",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",coverImg:"/books/book-japan_branch_honey.png",  pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey4",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Japanese Fan",         coverImg:"/books/book-japan_fan_honey.png",     pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
+
+  // ── Existing SVG-based templates ──────────────────────────────────────────
+  { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
+    pages:[...makeCoverPages("#fff0f5",[{id:"e1",type:"text",content:"OUR\nWEDDING\nDAY",x:30,y:30,w:340,h:120,font:"Londrina Solid",fontSize:52,color:"#c0506a",bold:false,italic:false,rotation:0},{id:"e2",type:"text",content:"Est. 2026",x:120,y:160,w:160,h:36,font:"Dancing Script",fontSize:22,color:"#c0506a",bold:false,italic:true,rotation:0},{id:"e3",type:"sticker",content:"🌹",x:280,y:140,w:70,h:70,rotation:-15},{id:"e4",type:"sticker",content:"💐",x:20,y:140,w:60,h:60,rotation:12}]),...makeBlankPages(14)] },
+  { id:"bs1", occasion:"Baby Shower", title:"Baby's First Year", desc:"Baby blue",
+    pages:[...makeCoverPages("#f0f8ff",[{id:"e1",type:"text",content:"BABY'S\nFIRST\nYEAR",x:20,y:15,w:360,h:130,font:"Londrina Solid",fontSize:54,color:"#5b8fc9",bold:false,italic:false,rotation:0},{id:"e2",type:"sticker",content:"🍼",x:30,y:200,w:80,h:80,rotation:-12},{id:"e3",type:"sticker",content:"👶",x:150,y:190,w:100,h:100,rotation:0},{id:"e4",type:"sticker",content:"🧸",x:290,y:200,w:80,h:80,rotation:10}]),...makeBlankPages(14)] },
+  { id:"g1", occasion:"Graduation", title:"Class of 2026",     desc:"Purple cap",
+    pages:[...makeCoverPages("#f4f0ff",[{id:"e1",type:"text",content:"CLASS OF\n2026",x:30,y:20,w:340,h:110,font:"Londrina Solid",fontSize:58,color:"#4A3068",bold:false,italic:false,rotation:0},{id:"e2",type:"sticker",content:"🎓",x:140,y:160,w:120,h:120,rotation:0},{id:"e3",type:"sticker",content:"🏆",x:40,y:330,w:70,h:70,rotation:0}]),...makeBlankPages(14)] },
+  { id:"a1", occasion:"Anniversary", title:"Forever Together",  desc:"Romantic rose",
+    pages:[...makeCoverPages("#fff0f5",[{id:"e1",type:"text",content:"FOREVER\nTOGETHER",x:20,y:20,w:360,h:110,font:"Playfair Display",fontSize:42,color:"#c0506a",bold:true,italic:false,rotation:0},{id:"e2",type:"sticker",content:"❤️",x:160,y:160,w:80,h:80,rotation:0},{id:"e3",type:"sticker",content:"🌹",x:30,y:160,w:70,h:70,rotation:-10},{id:"e4",type:"sticker",content:"🌹",x:300,y:160,w:70,h:70,rotation:10}]),...makeBlankPages(14)] },
+  { id:"en1", occasion:"Engagement", title:"She Said Yes!",     desc:"Lilac proposal",
+    pages:[...makeCoverPages("#fdf0ff",[{id:"e1",type:"text",content:"SHE SAID\nYES!",x:30,y:20,w:340,h:120,font:"Londrina Solid",fontSize:58,color:"#8040b0",bold:false,italic:false,rotation:0},{id:"e2",type:"sticker",content:"💍",x:150,y:170,w:100,h:100,rotation:0},{id:"e3",type:"sticker",content:"✨",x:30,y:180,w:60,h:60,rotation:0}]),...makeBlankPages(14)] },
 ];
 
-// Group templates by occasion for the picker UI
+
 const TEMPLATE_BY_OCCASION = TEMPLATE_LIBRARY.reduce((acc, tpl) => {
   if (!acc[tpl.occasion]) acc[tpl.occasion] = [];
   acc[tpl.occasion].push(tpl);
@@ -1231,6 +1220,7 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
     Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
     "Baby Shower":"استقبال مولود", Graduation:"تخرج",
     Family:"عائلة", Anniversary:"ذكرى سنوية", Engagement:"خطوبة",
+    Friendship:"صداقة",
   };
 
   const templates = TEMPLATE_BY_OCCASION[activeOccasion] || [];
@@ -1238,35 +1228,36 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
   // Mini book preview for each template
   const MiniBook = ({ tpl, size = isMobile ? 130 : 160 }) => {
     const H = Math.round(size * 1.4);
+    if (tpl.coverImg) {
+      return (
+        <img src={tpl.coverImg} alt={tpl.title}
+          style={{ height:H, width:"auto", borderRadius:6,
+            boxShadow:"4px 4px 16px rgba(74,48,104,0.15)", display:"block" }} />
+      );
+    }
     const SPINE = Math.round(size * 0.12);
     const coverEls = tpl.pages[1]?.elements || [];
     return (
       <div style={{ display:"flex", perspective:600, flexShrink:0 }}>
-        {/* Spine */}
-        <div style={{ width:SPINE, height:H, background:tpl.spineColor,
+        <div style={{ width:SPINE, height:H, background:tpl.spineColor||"#d0b8f0",
           borderRadius:"4px 0 0 4px", display:"flex", alignItems:"center", justifyContent:"center",
           boxShadow:"inset -2px 0 6px rgba(0,0,0,0.1)", flexShrink:0 }}>
           <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
             fontSize:Math.max(6, size*0.045), fontWeight:700, letterSpacing:1.5,
-            textTransform:"uppercase", color:tpl.titleColor, opacity:0.8,
+            textTransform:"uppercase", color:tpl.titleColor||DEEP_PURPLE, opacity:0.8,
             fontFamily:"'Quicksand',sans-serif" }}>
             {tpl.title}
           </div>
         </div>
-        {/* Cover */}
-        <div style={{ width:size, height:H, background:tpl.coverBg,
+        <div style={{ width:size, height:H, background:tpl.coverBg||"#fff0f5",
           borderRadius:"0 6px 6px 0", overflow:"hidden", position:"relative",
-          transform:"perspective(500px) rotateY(-6deg)",
-          transformOrigin:"left center",
+          transform:"perspective(500px) rotateY(-6deg)", transformOrigin:"left center",
           boxShadow:"4px 4px 16px rgba(74,48,104,0.15)" }}>
-          {/* Spine shadow */}
           <div style={{ position:"absolute", left:0, top:0, bottom:0, width:8,
             background:"linear-gradient(to right,rgba(0,0,0,0.08),transparent)", zIndex:2 }} />
-          {/* Scale down the actual template elements */}
-          <div style={{ position:"absolute", inset:0,
-            transform:`scale(${size/400})`, transformOrigin:"top left",
-            width:400, height:520, pointerEvents:"none" }}>
-            {coverEls.filter(el => el.type === "text").map(el => (
+          <div style={{ position:"absolute", inset:0, transform:`scale(${size/400})`,
+            transformOrigin:"top left", width:400, height:520, pointerEvents:"none" }}>
+            {coverEls.filter(el => el.type==="text").map(el => (
               <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
                 fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||16,
                 color:el.color||"#333", fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
@@ -1275,7 +1266,7 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
                 {el.content}
               </div>
             ))}
-            {coverEls.filter(el => el.type === "sticker").map(el => (
+            {coverEls.filter(el => el.type==="sticker").map(el => (
               <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:Math.min(el.w, el.h)*0.7 }}>
