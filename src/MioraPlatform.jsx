@@ -1246,7 +1246,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
   const [step, setStep] = useState(1);
   const [chosenTemplate, setChosenTemplate] = useState(null);
   const [photos, setPhotos] = useState([]);
-  const [generating, setGenerating] = useState(false);
   const [search, setSearch] = useState("");
   const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
   const [hovered, setHovered] = useState(null);
@@ -1279,7 +1278,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
   // ── AI Layout Engine ─────────────────────────────────────────────────────
   const generateAlbum = async () => {
     if (photos.length < 5) return;
-    setGenerating(true);
     setStep(3);
 
     // Page layout patterns — varied to make each spread unique
@@ -1405,8 +1403,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
       pages,
     });
 
-    await new Promise(r => setTimeout(r, 800)); // brief pause for effect
-    setGenerating(false);
+    await new Promise(r => setTimeout(r, 800));
     onComplete(pid);
   };
 
