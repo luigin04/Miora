@@ -845,14 +845,14 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
   }, []);
 
   // Book proportions match cover image ~556x800
-  const BH = isMobile ? 220 : 320;
+  const BH = isMobile ? 160 : 320;
   const BW = Math.round(BH * 0.695);
 
   // Position: always centered until phase 3
   const isShrunken = phase >= 3;
   const bookLeft = isShrunken ? (isMobile ? "50%" : "7%") : "50%";
   const bookTX   = isShrunken && !isMobile ? "0%" : "-50%";
-  const bookScale = isShrunken ? 1 : (isMobile ? 1.8 : 2.2);
+  const bookScale = isShrunken ? 1 : (isMobile ? 1.6 : 2.2);
 
   return (
     <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
@@ -878,12 +878,14 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
             style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
         </div>
 
-        {/* Cover — rotates on left edge */}
+        {/* Cover — rotates from center on mobile, left edge on desktop */}
         <div style={{
           position:"absolute", inset:0,
-          transformOrigin:"left center",
+          transformOrigin: isMobile ? "center center" : "left center",
           transformStyle:"preserve-3d",
-          transform: phase === 1 ? "rotateY(-160deg)" : "rotateY(0deg)",
+          transform: phase === 1
+            ? (isMobile ? "rotateY(180deg)" : "rotateY(-160deg)")
+            : "rotateY(0deg)",
           transition: phase === 2
             ? "transform 0.65s cubic-bezier(0.55,0,0.45,1)"
             : "transform 1.0s cubic-bezier(0.4,0,0.2,1)",
