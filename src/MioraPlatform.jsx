@@ -829,114 +829,90 @@ function FloatingBooksLayer() {
 //  3  close     — cover snaps shut,                              3.0 → 3.8s
 //  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
 function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
-  // Phases:
-  // 0 → cover fills screen, closed
-  // 1 → cover swings open, inner page visible
-  // 2 → cover swings back shut
-  // 3 → book shrinks + slides left
-  // 4 → hero text reveals right
   const [phase, setPhase] = useState(0);
+  // 0 = cover centered full screen, no animation yet
+  // 1 = cover opens
+  // 2 = cover closes
+  // 3 = shrink + move left
+  // 4 = text reveals
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 800);   // open
-    const t2 = setTimeout(() => setPhase(2), 2200);  // close
-    const t3 = setTimeout(() => setPhase(3), 3100);  // shrink left
-    const t4 = setTimeout(() => setPhase(4), 3900);  // reveal text
+    const t1 = setTimeout(() => setPhase(1), 900);
+    const t2 = setTimeout(() => setPhase(2), 2300);
+    const t3 = setTimeout(() => setPhase(3), 3100);
+    const t4 = setTimeout(() => setPhase(4), 3900);
     return () => [t1,t2,t3,t4].forEach(clearTimeout);
   }, []);
 
-  // Book dimensions
-  const BW = isMobile ? 180 : 260; // cover width
-  const BH = isMobile ? 252 : 364; // cover height (same ratio as image ~600x800)
-  const SPINE = isMobile ? 14 : 20;
+  // Book is portrait ~556x800, ratio 0.695
+  const ratio = 0.695;
+  const BH = isMobile ? 260 : 340;
+  const BW = Math.round(BH * ratio);
 
-  // Phase-driven wrapper style
-  const wrapperStyle = (() => {
-    const base = {
-      position:"absolute",
-      transition:"transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1), top 1.0s cubic-bezier(0.4,0,0.2,1)",
-    };
-    if (phase <= 2) return { ...base,
-      left:"50%", top:"50%",
-      transform:"translate(-50%,-50%) scale(2.4) rotateX(3deg)",
-      transition: phase === 0 ? "none" : base.transition,
-    };
-    if (phase >= 3) return { ...base,
-      left: isMobile ? "50%" : "7%",
-      top:"50%",
-      transform: isMobile
-        ? "translate(-50%,-50%) scale(1) rotateX(2deg)"
-        : "translate(0,-50%) scale(1) rotateX(2deg)",
-    };
-    return base;
-  })();
-
-  // Cover rotation
-  const coverRot = phase === 1 ? "rotateY(-155deg)" : "rotateY(0deg)";
-  const coverTransition = phase === 2
-    ? "transform 0.75s cubic-bezier(0.6,0,0.4,1)"
-    : "transform 1.0s cubic-bezier(0.4,0,0.2,1)";
+  // Scale: big when centered, normal when moved left
+  const scale = phase >= 3 ? 1 : 2.3;
+  // Left position: center until phase 3, then left side
+  const leftPos = phase >= 3
+    ? (isMobile ? "50%" : "7%")
+    : "50%";
+  // translateX: always -50% until phase 3 on desktop where we want left edge at 7%
+  const tx = (phase >= 3 && !isMobile) ? "0%" : "-50%";
 
   return (
     <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
       background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
-      {/* Book */}
-      <div style={{ ...wrapperStyle, position:"absolute" }}>
-        <div style={{ position:"relative", width:BW + SPINE, height:BH, transformStyle:"preserve-3d", perspective:1200 }}>
+      {/* Single book — cover only, opens then closes */}
+      <div style={{
+        position:"absolute",
+        left: leftPos,
+        top:"50%",
+        width: BW,
+        height: BH,
+        transform:`translate(${tx},-50%) scale(${scale})`,
+        transition: phase === 0 ? "none"
+          : "transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1)",
+        transformOrigin:"center center",
+        perspective:900,
+        zIndex:5,
+      }}>
+        {/* Inner page — sits behind, visible when cover opens */}
+        <div style={{ position:"absolute", inset:0, borderRadius:6, overflow:"hidden",
+          boxShadow:"2px 2px 12px rgba(74,48,104,0.12)" }}>
+          <img src="/books/miora-inner.jpg" alt=""
+            style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+        </div>
 
-          {/* Inner page — visible when cover is open */}
-          <div style={{ position:"absolute", left:0, top:0, width:BW, height:BH,
-            borderRadius:"6px 0 0 6px", overflow:"hidden",
-            opacity: phase === 1 ? 1 : 0,
-            transition:"opacity 0.3s ease 0.4s" }}>
-            <img src="/books/miora-inner.jpg" alt="inner page"
+        {/* Cover — rotates on left edge to open/close */}
+        <div style={{
+          position:"absolute", inset:0,
+          transformOrigin:"left center",
+          transformStyle:"preserve-3d",
+          transform: phase === 1 ? "rotateY(-155deg)" : "rotateY(0deg)",
+          transition: phase === 2
+            ? "transform 0.65s cubic-bezier(0.55,0,0.45,1)"
+            : "transform 0.95s cubic-bezier(0.4,0,0.2,1)",
+          borderRadius:6,
+          boxShadow:"4px 4px 20px rgba(74,48,104,0.22)",
+        }}>
+          {/* Front */}
+          <img src="/books/miora-cover.jpg" alt="Miora Photobooks"
+            style={{ position:"absolute", inset:0, width:"100%", height:"100%",
+              objectFit:"cover", borderRadius:6, backfaceVisibility:"hidden", display:"block" }} />
+          {/* Back of cover (shows inner page texture) */}
+          <div style={{ position:"absolute", inset:0, borderRadius:6, overflow:"hidden",
+            backfaceVisibility:"hidden", transform:"rotateY(180deg)" }}>
+            <img src="/books/miora-inner.jpg" alt=""
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-          </div>
-
-          {/* Spine */}
-          <div style={{ position:"absolute", left:BW-1, top:0, width:SPINE+2, height:BH, zIndex:5,
-            background:"linear-gradient(to right,#a080c8,#c8b0e8,#a080c8)",
-            display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <div style={{ writingMode:"vertical-rl", transform:"rotate(180deg)",
-              fontSize:7, fontWeight:700, letterSpacing:2, textTransform:"uppercase",
-              color:"white", opacity:0.7, fontFamily:"'Quicksand',sans-serif" }}>
-              Miora
-            </div>
-          </div>
-
-          {/* Front cover — real image, animates open/close */}
-          <div style={{ position:"absolute", left:BW + SPINE - 1, top:0, width:BW, height:BH,
-            transformOrigin:"left center", transformStyle:"preserve-3d",
-            transform: coverRot,
-            transition: coverTransition,
-            borderRadius:"0 6px 6px 0",
-            boxShadow: phase === 1 ? "none" : "6px 6px 28px rgba(74,48,104,0.22)" }}>
-            {/* Front face */}
-            <div style={{ position:"absolute", inset:0, backfaceVisibility:"hidden",
-              borderRadius:"0 6px 6px 0", overflow:"hidden" }}>
-              <img src="/books/miora-cover.png" alt="Miora cover"
-                style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
-              {/* Spine shadow on cover edge */}
-              <div style={{ position:"absolute", left:0, top:0, bottom:0, width:10,
-                background:"linear-gradient(to right,rgba(0,0,0,0.15),transparent)" }} />
-            </div>
-            {/* Back face of cover (back cover = same as inner) */}
-            <div style={{ position:"absolute", inset:0, backfaceVisibility:"hidden",
-              transform:"rotateY(180deg)", borderRadius:"0 6px 6px 0", overflow:"hidden",
-              background:"#f8f4ff" }}>
-              <img src="/books/miora-inner.jpg" alt="back"
-                style={{ width:"100%", height:"100%", objectFit:"cover", display:"block", opacity:0.6 }} />
-            </div>
           </div>
         </div>
       </div>
 
-      {/* Hero content — fades in after book moves left */}
+      {/* Hero text */}
       <div style={{
         position:"absolute",
-        left: isMobile ? 0 : `calc(7% + ${BW + SPINE + 40}px)`,
+        left: isMobile ? 0 : `calc(7% + ${BW + 36}px)`,
         right: 0,
         top: isMobile ? "auto" : "50%",
         bottom: isMobile ? 0 : "auto",
@@ -949,13 +925,13 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
         zIndex:10,
       }}>
         <div style={{ fontFamily:"'Londrina Solid',cursive",
-          fontSize: isMobile ? "clamp(40px,12vw,60px)" : "clamp(40px,5vw,68px)",
+          fontSize: isMobile ? "clamp(40px,12vw,60px)" : "clamp(40px,4.5vw,64px)",
           color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4 }}>MIORA</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 11 : 14,
+        <div style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 11 : 13,
           color:DARK_PURPLE, opacity:0.45, letterSpacing:6, textTransform:"uppercase", marginBottom:16 }}>
           by Layal
         </div>
-        <p style={{ fontSize: isMobile ? 14 : 17, maxWidth:360, lineHeight:1.75,
+        <p style={{ fontSize: isMobile ? 14 : 16, maxWidth:340, lineHeight:1.8,
           color:DARK_PURPLE, opacity:0.7, fontWeight:300, marginBottom:28 }}>
           {t("Beautiful photo albums for life's most precious moments.",
              "ألبومات صور جميلة لأغلى لحظات الحياة.")}
@@ -969,7 +945,6 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
               onClick={() => setCurrentView("my-projects")} />
           )}
         </div>
-        {/* Scroll dots */}
         <div style={{ display:"flex", flexDirection: isMobile?"row":"column",
           justifyContent:isMobile?"center":"flex-start",
           gap:5, marginTop:28, opacity:0.3 }}>
