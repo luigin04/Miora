@@ -1243,11 +1243,13 @@ const TEMPLATE_OCCASIONS = Object.keys(TEMPLATE_BY_OCCASION);
 // Step 2: Upload photos (min 30 pages worth)
 // Step 3: AI scatters photos across pages with varied layouts + matching stickers
 function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject, updateProject, t, lang, isRTL, isMobile }) {
-  const [step, setStep] = useState(1); // 1=template, 2=upload, 3=generating
+  const [step, setStep] = useState(1);
   const [chosenTemplate, setChosenTemplate] = useState(null);
-  const [photos, setPhotos] = useState([]); // array of base64 src strings
+  const [photos, setPhotos] = useState([]);
   const [generating, setGenerating] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
+  const [hovered, setHovered] = useState(null);
 
   const occasionAr = {
     Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
@@ -1523,8 +1525,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
   }
 
   // ── Step 1: Choose template ─────────────────────────────────────────────
-  const displayTemplates = searchResults || TEMPLATE_BY_OCCASION[TEMPLATE_OCCASIONS[0]] || [];
-  const [activeOccasion, setActiveOccasion_] = useState(TEMPLATE_OCCASIONS[0]);
   const visibleTemplates = searchResults || TEMPLATE_BY_OCCASION[activeOccasion] || [];
 
   return (
@@ -1572,7 +1572,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
           <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:8, marginBottom:24,
             justifyContent: isMobile?"flex-start":"center", flexWrap: isMobile?"nowrap":"wrap" }}>
             {TEMPLATE_OCCASIONS.map(occ => (
-              <button key={occ} onClick={() => setActiveOccasion_(occ)} style={{
+              <button key={occ} onClick={() => setActiveOccasion(occ)} style={{
                 padding: isMobile?"7px 12px":"9px 18px", borderRadius:20, fontSize:12,
                 fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"'Quicksand',sans-serif",
                 border: activeOccasion===occ ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}40`,
@@ -1625,8 +1625,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
       </div>
     </div>
   );
-  // eslint-disable-next-line no-unused-vars
-  void displayTemplates;
 }
 
 // ─── Template Picker View ─────────────────────────────────────────────────────
