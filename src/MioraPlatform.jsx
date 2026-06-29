@@ -711,7 +711,6 @@ function FloatingBooksLayer() {
     // Desktop drag
     if (!isMobile) {
       let dragging = false, ox = 0, oy = 0, lx = 0, ly = 0, vx = 0, vy = 0;
-      let rafId = null;
 
       img.addEventListener("mousedown", e => {
         e.stopPropagation();
@@ -746,10 +745,9 @@ function FloatingBooksLayer() {
           // Simple throw — move a few frames then stop
           let cx = parseFloat(img.style.left);
           let cy = parseFloat(img.style.top);
-          let frames = 0;
           const throwIt = () => {
             vx *= 0.92; vy *= 0.92; vy -= 0.2;
-            cx += vx; cy += vy; frames++;
+            cx += vx; cy += vy;
             img.style.left = cx + "px";
             img.style.top  = cy + "px";
             const offscreen = cy < -300 || cy > window.innerHeight + 200
