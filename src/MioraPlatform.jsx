@@ -830,94 +830,89 @@ function FloatingBooksLayer() {
 //  4  reveal    — hero text / CTAs fade in on the right,         3.5s+
 function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
   const [phase, setPhase] = useState(0);
-  // 0 = cover centered full screen, no animation yet
-  // 1 = cover opens
-  // 2 = cover closes
-  // 3 = shrink + move left
-  // 4 = text reveals
+  // 0 = cover centered fullscreen, closed
+  // 1 = cover opens (rotates left, reveals inner page)
+  // 2 = cover closes back
+  // 3 = book shrinks + moves left
+  // 4 = text reveals right
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 900);
-    const t2 = setTimeout(() => setPhase(2), 2300);
-    const t3 = setTimeout(() => setPhase(3), 3100);
-    const t4 = setTimeout(() => setPhase(4), 3900);
+    const t2 = setTimeout(() => setPhase(2), 2400);
+    const t3 = setTimeout(() => setPhase(3), 3200);
+    const t4 = setTimeout(() => setPhase(4), 4000);
     return () => [t1,t2,t3,t4].forEach(clearTimeout);
   }, []);
 
-  // Book is portrait ~556x800, ratio 0.695
-  const ratio = 0.695;
-  const BH = isMobile ? 260 : 340;
-  const BW = Math.round(BH * ratio);
+  // Book proportions match cover image ~556x800
+  const BH = isMobile ? 220 : 320;
+  const BW = Math.round(BH * 0.695);
 
-  // Scale: big when centered, normal when moved left
-  const scale = phase >= 3 ? 1 : 2.3;
-  // Left position: center until phase 3, then left side
-  const leftPos = phase >= 3
-    ? (isMobile ? "50%" : "7%")
-    : "50%";
-  // translateX: always -50% until phase 3 on desktop where we want left edge at 7%
-  const tx = (phase >= 3 && !isMobile) ? "0%" : "-50%";
+  // Position: always centered until phase 3
+  const isShrunken = phase >= 3;
+  const bookLeft = isShrunken ? (isMobile ? "50%" : "7%") : "50%";
+  const bookTX   = isShrunken && !isMobile ? "0%" : "-50%";
+  const bookScale = isShrunken ? 1 : (isMobile ? 1.8 : 2.2);
 
   return (
     <section style={{ minHeight:"100vh", position:"relative", overflow:"hidden",
       background:`linear-gradient(160deg,${SOFT_PINK} 0%,#fff5f8 45%,${WARM_WHITE} 100%)` }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
-      {/* Single book — cover only, opens then closes */}
+      {/* Book container — just one book width, centered */}
       <div style={{
         position:"absolute",
-        left: leftPos,
+        left: bookLeft,
         top:"50%",
         width: BW,
         height: BH,
-        transform:`translate(${tx},-50%) scale(${scale})`,
+        transform:`translate(${bookTX},-50%) scale(${bookScale})`,
         transition: phase === 0 ? "none"
           : "transform 1.1s cubic-bezier(0.4,0,0.2,1), left 1.0s cubic-bezier(0.35,0,0.25,1)",
-        transformOrigin:"center center",
-        perspective:900,
         zIndex:5,
       }}>
-        {/* Inner page — sits behind, visible when cover opens */}
+        {/* Inner page — sits behind cover, shown when cover opens */}
         <div style={{ position:"absolute", inset:0, borderRadius:6, overflow:"hidden",
-          boxShadow:"2px 2px 12px rgba(74,48,104,0.12)" }}>
-          <img src="/books/miora-inner.jpg" alt=""
+          boxShadow:"2px 2px 12px rgba(74,48,104,0.1)" }}>
+          <img src="/books/miora-inner.jpg" alt="inner page"
             style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
         </div>
 
-        {/* Cover — rotates on left edge to open/close */}
+        {/* Cover — rotates on left edge */}
         <div style={{
           position:"absolute", inset:0,
           transformOrigin:"left center",
           transformStyle:"preserve-3d",
-          transform: phase === 1 ? "rotateY(-155deg)" : "rotateY(0deg)",
+          transform: phase === 1 ? "rotateY(-160deg)" : "rotateY(0deg)",
           transition: phase === 2
             ? "transform 0.65s cubic-bezier(0.55,0,0.45,1)"
-            : "transform 0.95s cubic-bezier(0.4,0,0.2,1)",
+            : "transform 1.0s cubic-bezier(0.4,0,0.2,1)",
           borderRadius:6,
-          boxShadow:"4px 4px 20px rgba(74,48,104,0.22)",
+          boxShadow: phase === 1 ? "none" : "4px 4px 20px rgba(74,48,104,0.22)",
         }}>
-          {/* Front */}
+          {/* Front face = cover photo */}
           <img src="/books/miora-cover.jpg" alt="Miora Photobooks"
             style={{ position:"absolute", inset:0, width:"100%", height:"100%",
-              objectFit:"cover", borderRadius:6, backfaceVisibility:"hidden", display:"block" }} />
-          {/* Back of cover (shows inner page texture) */}
+              objectFit:"cover", borderRadius:6,
+              backfaceVisibility:"hidden", display:"block" }} />
+          {/* Back face of cover = content page (cameras) */}
           <div style={{ position:"absolute", inset:0, borderRadius:6, overflow:"hidden",
             backfaceVisibility:"hidden", transform:"rotateY(180deg)" }}>
-            <img src="/books/miora-inner.jpg" alt=""
+            <img src="/books/miora-page.jpg" alt="page"
               style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
           </div>
         </div>
       </div>
 
-      {/* Hero text */}
+      {/* Hero text — fades in after book moves left */}
       <div style={{
         position:"absolute",
-        left: isMobile ? 0 : `calc(7% + ${BW + 36}px)`,
+        left: isMobile ? 0 : `calc(7% + ${BW + 40}px)`,
         right: 0,
         top: isMobile ? "auto" : "50%",
-        bottom: isMobile ? 0 : "auto",
+        bottom: isMobile ? "5%" : "auto",
         transform: !isMobile ? "translateY(-50%)" : "none",
-        padding: isMobile ? "0 24px 48px" : "0 40px",
+        padding: isMobile ? "0 24px 32px" : "0 40px",
         opacity: phase >= 4 ? 1 : 0,
         transition:"opacity 0.9s ease",
         textAlign: isMobile ? "center" : "left",
@@ -925,14 +920,15 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
         zIndex:10,
       }}>
         <div style={{ fontFamily:"'Londrina Solid',cursive",
-          fontSize: isMobile ? "clamp(40px,12vw,60px)" : "clamp(40px,4.5vw,64px)",
+          fontSize: isMobile ? "clamp(36px,10vw,52px)" : "clamp(40px,4.5vw,64px)",
           color:DEEP_PURPLE, lineHeight:1, marginBottom:4, letterSpacing:4 }}>MIORA</div>
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile ? 11 : 13,
-          color:DARK_PURPLE, opacity:0.45, letterSpacing:6, textTransform:"uppercase", marginBottom:16 }}>
+        <div style={{ fontFamily:"'Playfair Display',serif",
+          fontSize: isMobile ? 10 : 13,
+          color:DARK_PURPLE, opacity:0.45, letterSpacing:6, textTransform:"uppercase", marginBottom:14 }}>
           by Layal
         </div>
-        <p style={{ fontSize: isMobile ? 14 : 16, maxWidth:340, lineHeight:1.8,
-          color:DARK_PURPLE, opacity:0.7, fontWeight:300, marginBottom:28 }}>
+        <p style={{ fontSize: isMobile ? 13 : 16, maxWidth:340, lineHeight:1.8,
+          color:DARK_PURPLE, opacity:0.7, fontWeight:300, marginBottom:24 }}>
           {t("Beautiful photo albums for life's most precious moments.",
              "ألبومات صور جميلة لأغلى لحظات الحياة.")}
         </p>
@@ -946,8 +942,8 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
           )}
         </div>
         <div style={{ display:"flex", flexDirection: isMobile?"row":"column",
-          justifyContent:isMobile?"center":"flex-start",
-          gap:5, marginTop:28, opacity:0.3 }}>
+          justifyContent: isMobile?"center":"flex-start",
+          gap:5, marginTop:24, opacity:0.3 }}>
           {[0,1,2].map(i=>(
             <div key={i} style={{ width:5, height:5, borderRadius:"50%", background:DEEP_PURPLE,
               animation:`scrollDot 1.4s ease-in-out ${i*0.2}s infinite` }} />
