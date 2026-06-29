@@ -663,60 +663,59 @@ const LAYAL_BOOK_IMAGES = {
 // On desktop: click to grab, release to throw with momentum.
 // On mobile: touch and drag to grab and throw.
 function FloatingBooksLayer() {
+  const isMobile = useIsMobile();
   const [books, setBooks] = useState([]);
   const bookRefs = useRef({});
-  const dragState = useRef(null); // { id, startX, startY, lastX, lastY, vx, vy, interval }
-
-  const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
-  let spawnIdx = useRef(0);
+  const dragState = useRef(null);
+  const spawnIdx = useRef(0);
+  const booksRef = useRef(books);
+  useEffect(() => { booksRef.current = books; }, [books]);
 
   // Spawn books continuously
   useEffect(() => {
+    const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
     const spawn = () => {
       const id = "fb-" + generateId();
       const key = bookKeys[spawnIdx.current % bookKeys.length];
       spawnIdx.current++;
       const book = LAYAL_BOOK_IMAGES[key];
-      const scale = 0.28 + Math.random() * 0.16;
-      const tilt  = (Math.random() - 0.5) * 18;
-      const left  = 2 + Math.random() * 90;
+      const scale    = 0.28 + Math.random() * 0.16;
+      const tilt     = (Math.random() - 0.5) * 18;
+      const left     = 2 + Math.random() * 90;
       const duration = 11 + Math.random() * 9;
-      const delay = Math.random() * 1.5;
+      const delay    = Math.random() * 1.5;
       setBooks(prev => [...prev.slice(-14), {
         id, book, scale, tilt, left, duration, delay,
-        x: null, y: null, // null = CSS animation mode
-        grabbed: false, vx: 0, vy: 0,
+        x: null, y: null, grabbed: false, vx: 0, vy: 0,
       }]);
-      setTimeout(() => {
-        setBooks(prev => prev.filter(b => b.id !== id));
-      }, (duration + delay + 2) * 1000);
+      setTimeout(() => setBooks(prev => prev.filter(b => b.id !== id)),
+        (duration + delay + 2) * 1000);
     };
-    // Stagger initial batch
-    [0,1,2,3,4].forEach(i => setTimeout(spawn, i * 800));
-    const iv = setInterval(spawn, 3500);
+    [0,1,2,3,4].forEach(i => setTimeout(spawn, i * 900));
+    const iv = setInterval(spawn, 3800);
     return () => clearInterval(iv);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Physics loop for thrown books
+  // Physics loop — only when books have JS position
   useEffect(() => {
     let rafId;
     const tick = () => {
-      setBooks(prev => prev.map(b => {
-        if (b.x === null || b.grabbed) return b;
-        // Apply velocity + gravity drift
-        let { x, y, vx, vy } = b;
-        vx *= 0.94;
-        vy *= 0.94;
-        vy -= 0.15; // gentle upward drift after throw
-        x += vx;
-        y += vy;
-        // If off screen, remove CSS override and let it float again
-        if (y < -400 || y > window.innerHeight + 200 || x < -300 || x > window.innerWidth + 300) {
-          return { ...b, x: null, y: null, vx: 0, vy: 0 };
-        }
-        return { ...b, x, y, vx, vy };
-      }));
+      setBooks(prev => {
+        const hasJS = prev.some(b => b.x !== null && !b.grabbed);
+        if (!hasJS) { rafId = requestAnimationFrame(tick); return prev; }
+        return prev.map(b => {
+          if (b.x === null || b.grabbed) return b;
+          let { x, y, vx, vy } = b;
+          vx *= 0.93; vy *= 0.93;
+          vy -= 0.12; // upward drift
+          x += vx; y += vy;
+          if (y < -400 || y > window.innerHeight + 200 ||
+              x < -300 || x > window.innerWidth + 300) {
+            return { ...b, x: null, y: null, vx: 0, vy: 0 };
+          }
+          return { ...b, x, y, vx, vy };
+        });
+      });
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -724,83 +723,117 @@ function FloatingBooksLayer() {
   }, []);
 
   const startDrag = (id, clientX, clientY) => {
-    const book = books.find(b => b.id === id);
+    const book = booksRef.current.find(b => b.id === id);
     if (!book) return;
-    // Switch from CSS animation to JS-controlled position
-    const el = bookRefs.current[id];
-    let startX = clientX, startY = clientY;
     let posX = book.x, posY = book.y;
+    const el = bookRefs.current[id];
     if (posX === null && el) {
       const rect = el.getBoundingClientRect();
-      posX = rect.left;
-      posY = rect.top;
+      posX = rect.left; posY = rect.top;
     }
     setBooks(prev => prev.map(b => b.id === id
       ? { ...b, grabbed: true, x: posX, y: posY, vx: 0, vy: 0 }
       : b));
-    const velocityHistory = [];
     dragState.current = {
-      id, startX, startY, lastX: clientX, lastY: clientY,
-      posX, posY, velocityHistory,
+      id, startX: clientX, startY: clientY,
+      posX, posY, lastX: clientX, lastY: clientY,
+      velocityHistory: [],
     };
   };
 
-  const onDrag = (clientX, clientY) => {
+  const onDragMove = (clientX, clientY) => {
     if (!dragState.current) return;
-    const { id, lastX, lastY, posX, posY } = dragState.current;
-    const dx = clientX - lastX;
-    const dy = clientY - lastY;
-    dragState.current.posX = posX + (clientX - dragState.current.startX);
-    dragState.current.posY = posY + (clientY - dragState.current.startY);
-    dragState.current.lastX = clientX;
-    dragState.current.lastY = clientY;
-    dragState.current.velocityHistory.push({ vx: dx, vy: dy, t: Date.now() });
-    if (dragState.current.velocityHistory.length > 8) {
-      dragState.current.velocityHistory.shift();
-    }
-    setBooks(prev => prev.map(b => b.id === id
-      ? { ...b, x: dragState.current.posX, y: dragState.current.posY }
+    const ds = dragState.current;
+    const dx = clientX - ds.lastX;
+    const dy = clientY - ds.lastY;
+    ds.posX += dx; ds.posY += dy;
+    ds.lastX = clientX; ds.lastY = clientY;
+    ds.velocityHistory.push({ vx: dx, vy: dy, t: Date.now() });
+    if (ds.velocityHistory.length > 8) ds.velocityHistory.shift();
+    setBooks(prev => prev.map(b => b.id === ds.id
+      ? { ...b, x: ds.posX, y: ds.posY }
       : b));
   };
 
   const endDrag = () => {
     if (!dragState.current) return;
     const { id, velocityHistory } = dragState.current;
-    // Average recent velocity for throw
     const recent = velocityHistory.filter(v => Date.now() - v.t < 150);
-    const vx = recent.length ? recent.reduce((a,v) => a + v.vx, 0) / recent.length * 2.5 : 0;
-    const vy = recent.length ? recent.reduce((a,v) => a + v.vy, 0) / recent.length * 2.5 : 0;
+    const vx = recent.length ? recent.reduce((a,v) => a + v.vx, 0) / recent.length * 2.2 : 0;
+    const vy = recent.length ? recent.reduce((a,v) => a + v.vy, 0) / recent.length * 2.2 : 0;
     setBooks(prev => prev.map(b => b.id === id
       ? { ...b, grabbed: false, vx, vy }
       : b));
     dragState.current = null;
   };
 
-  // Global mouse/touch move + end listeners
+  // Mouse events — desktop only
   useEffect(() => {
-    const onMouseMove = e => onDrag(e.clientX, e.clientY);
-    const onTouchMove = e => { e.preventDefault(); onDrag(e.touches[0].clientX, e.touches[0].clientY); };
-    const onEnd = () => endDrag();
+    if (isMobile) return;
+    const onMouseMove = e => onDragMove(e.clientX, e.clientY);
+    const onMouseUp   = () => endDrag();
     window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onEnd);
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
-    window.addEventListener("touchend", onEnd);
+    window.addEventListener("mouseup",   onMouseUp);
     return () => {
       window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onEnd);
-      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("mouseup",   onMouseUp);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMobile, books]);
+
+  // Touch events — mobile only, attached PER BOOK not on window
+  // This avoids blocking scroll — only fires when grabbing a book
+  const onTouchStart = (id, e) => {
+    // Only grab if user holds still for 120ms (distinguish from scroll)
+    const touch = e.touches[0];
+    const startX = touch.clientX, startY = touch.clientY;
+    const holdTimer = setTimeout(() => {
+      startDrag(id, startX, startY);
+    }, 120);
+    // If finger moves significantly before 120ms → it's a scroll, cancel grab
+    const onMove = (ev) => {
+      const t = ev.touches[0];
+      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
+        clearTimeout(holdTimer);
+        window.removeEventListener("touchmove", onMove);
+      }
+    };
+    const onEnd = () => {
+      clearTimeout(holdTimer);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+  };
+
+  // When a book IS grabbed on mobile, handle move/end
+  useEffect(() => {
+    if (!isMobile) return;
+    const grabbed = books.find(b => b.grabbed);
+    if (!grabbed) return;
+    const onMove = (e) => {
+      if (dragState.current) {
+        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+    const onEnd = () => endDrag();
+    window.addEventListener("touchmove", onMove, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchmove", onMove);
       window.removeEventListener("touchend", onEnd);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [books]);
+  }, [isMobile, books.some(b => b.grabbed)]);
 
   return (
     <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:50, overflow:"hidden" }}>
       <style>{`
         @keyframes bookFloatGlobal {
-          0%   { transform: translateY(0vh) rotate(var(--btilt)); opacity: 0; }
-          6%   { opacity: 0.75; }
-          92%  { opacity: 0.75; }
+          0%   { transform: translateY(0) rotate(var(--btilt)); opacity: 0; }
+          6%   { opacity: 0.72; }
+          92%  { opacity: 0.72; }
           100% { transform: translateY(-115vh) rotate(var(--btilt)); opacity: 0; }
         }
       `}</style>
@@ -814,20 +847,21 @@ function FloatingBooksLayer() {
             src={b.book.src}
             alt={b.book.title}
             draggable={false}
-            onMouseDown={e => { e.stopPropagation(); startDrag(b.id, e.clientX, e.clientY); }}
-            onTouchStart={e => { e.stopPropagation(); startDrag(b.id, e.touches[0].clientX, e.touches[0].clientY); }}
+            onMouseDown={isMobile ? undefined : e => { e.stopPropagation(); startDrag(b.id, e.clientX, e.clientY); }}
+            onTouchStart={isMobile ? e => onTouchStart(b.id, e) : undefined}
             style={{
               position: "fixed",
               pointerEvents: "auto",
               userSelect: "none",
+              WebkitUserSelect: "none",
               height: H,
               width: "auto",
-              cursor: b.grabbed ? "grabbing" : "grab",
-              // CSS animation mode (floating upward)
+              cursor: isMobile ? "default" : (b.grabbed ? "grabbing" : "grab"),
+              touchAction: b.grabbed ? "none" : "auto",
               ...(isJS ? {
                 left: b.x,
                 top: b.y,
-                transform: `rotate(${b.tilt}deg) scale(${b.grabbed ? 1.06 : 1})`,
+                transform: `rotate(${b.tilt}deg) scale(${b.grabbed ? 1.05 : 1})`,
                 transition: b.grabbed ? "transform 0.1s ease" : "none",
                 opacity: 0.78,
               } : {
