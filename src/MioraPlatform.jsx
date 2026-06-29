@@ -664,217 +664,162 @@ const LAYAL_BOOK_IMAGES = {
 // On mobile: touch and drag to grab and throw.
 function FloatingBooksLayer() {
   const isMobile = useIsMobile();
-  const [books, setBooks] = useState([]);
-  const bookRefs = useRef({});
-  const dragState = useRef(null);
+  const containerRef = useRef(null);
   const spawnIdx = useRef(0);
-  const booksRef = useRef(books);
-  useEffect(() => { booksRef.current = books; }, [books]);
+  const activeBooks = useRef({}); // id -> { el, tilt, dragging, ox, oy }
 
-  // Spawn books continuously
-  useEffect(() => {
-    const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
-    const spawn = () => {
-      const id = "fb-" + generateId();
-      const key = bookKeys[spawnIdx.current % bookKeys.length];
-      spawnIdx.current++;
-      const book = LAYAL_BOOK_IMAGES[key];
-      const scale    = 0.28 + Math.random() * 0.16;
-      const tilt     = (Math.random() - 0.5) * 18;
-      const left     = 2 + Math.random() * 90;
-      const duration = 11 + Math.random() * 9;
-      const delay    = Math.random() * 1.5;
-      setBooks(prev => [...prev.slice(-14), {
-        id, book, scale, tilt, left, duration, delay,
-        x: null, y: null, grabbed: false, vx: 0, vy: 0,
-      }]);
-      setTimeout(() => setBooks(prev => prev.filter(b => b.id !== id)),
-        (duration + delay + 2) * 1000);
-    };
-    [0,1,2,3,4].forEach(i => setTimeout(spawn, i * 900));
-    const iv = setInterval(spawn, 3800);
-    return () => clearInterval(iv);
-  }, []);
+  const bookKeys = Object.keys(LAYAL_BOOK_IMAGES);
 
-  // Physics loop — only when books have JS position
-  useEffect(() => {
-    let rafId;
-    const tick = () => {
-      setBooks(prev => {
-        const hasJS = prev.some(b => b.x !== null && !b.grabbed);
-        if (!hasJS) { rafId = requestAnimationFrame(tick); return prev; }
-        return prev.map(b => {
-          if (b.x === null || b.grabbed) return b;
-          let { x, y, vx, vy } = b;
-          vx *= 0.93; vy *= 0.93;
-          vy -= 0.12; // upward drift
-          x += vx; y += vy;
-          if (y < -400 || y > window.innerHeight + 200 ||
-              x < -300 || x > window.innerWidth + 300) {
-            return { ...b, x: null, y: null, vx: 0, vy: 0 };
-          }
-          return { ...b, x, y, vx, vy };
-        });
+  const spawnBook = () => {
+    if (!containerRef.current) return;
+    const id = "fb-" + Math.random().toString(36).slice(2);
+    const key = bookKeys[spawnIdx.current % bookKeys.length];
+    spawnIdx.current++;
+    const book = LAYAL_BOOK_IMAGES[key];
+
+    const scale    = 0.28 + Math.random() * 0.16;
+    const tilt     = (Math.random() - 0.5) * 18;
+    const left     = 2 + Math.random() * 88;
+    const duration = 12 + Math.random() * 8;
+    const delay    = Math.random() * 1.5;
+    const H        = Math.round(220 * scale);
+
+    const img = document.createElement("img");
+    img.src = book.src;
+    img.alt = book.title;
+    img.draggable = false;
+    img.style.cssText = `
+      position:fixed;
+      left:${left}%;
+      bottom:-5%;
+      height:${H}px;
+      width:auto;
+      opacity:0;
+      pointer-events:auto;
+      user-select:none;
+      -webkit-user-select:none;
+      touch-action:auto;
+      cursor:${isMobile?"default":"grab"};
+      will-change:transform;
+      animation:bookFloatGlobal ${duration}s ease ${delay}s forwards;
+      --btilt:${tilt}deg;
+    `;
+
+    activeBooks.current[id] = { el: img, tilt, dragging: false };
+    containerRef.current.appendChild(img);
+
+    // Desktop drag
+    if (!isMobile) {
+      let dragging = false, ox = 0, oy = 0, lx = 0, ly = 0, vx = 0, vy = 0;
+      let rafId = null;
+
+      img.addEventListener("mousedown", e => {
+        e.stopPropagation();
+        const rect = img.getBoundingClientRect();
+        ox = e.clientX - rect.left;
+        oy = e.clientY - rect.top;
+        lx = e.clientX; ly = e.clientY;
+        vx = 0; vy = 0;
+        dragging = true;
+        img.style.animation = "none";
+        img.style.opacity = "0.85";
+        img.style.cursor = "grabbing";
+        img.style.left = rect.left + "px";
+        img.style.top  = rect.top  + "px";
+        img.style.bottom = "auto";
+        img.style.transform = `rotate(${tilt}deg) scale(1.04)`;
+        img.style.transition = "transform 0.1s ease";
+
+        const onMove = ev => {
+          if (!dragging) return;
+          vx = ev.clientX - lx; vy = ev.clientY - ly;
+          lx = ev.clientX; ly = ev.clientY;
+          img.style.left = (ev.clientX - ox) + "px";
+          img.style.top  = (ev.clientY - oy) + "px";
+        };
+        const onUp = () => {
+          dragging = false;
+          img.style.cursor = "grab";
+          img.style.transform = `rotate(${tilt}deg) scale(1)`;
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          // Simple throw — move a few frames then stop
+          let cx = parseFloat(img.style.left);
+          let cy = parseFloat(img.style.top);
+          let frames = 0;
+          const throwIt = () => {
+            vx *= 0.92; vy *= 0.92; vy -= 0.2;
+            cx += vx; cy += vy; frames++;
+            img.style.left = cx + "px";
+            img.style.top  = cy + "px";
+            const offscreen = cy < -300 || cy > window.innerHeight + 200
+                           || cx < -200 || cx > window.innerWidth + 200;
+            if (!offscreen && (Math.abs(vx) > 0.3 || Math.abs(vy) > 0.3)) {
+              rafId = requestAnimationFrame(throwIt);
+            } else {
+              // Reset to CSS float
+              img.remove();
+              delete activeBooks.current[id];
+            }
+          };
+          rafId = requestAnimationFrame(throwIt);
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
       });
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  const startDrag = (id, clientX, clientY) => {
-    const book = booksRef.current.find(b => b.id === id);
-    if (!book) return;
-    let posX = book.x, posY = book.y;
-    const el = bookRefs.current[id];
-    if (posX === null && el) {
-      const rect = el.getBoundingClientRect();
-      posX = rect.left; posY = rect.top;
     }
-    setBooks(prev => prev.map(b => b.id === id
-      ? { ...b, grabbed: true, x: posX, y: posY, vx: 0, vy: 0 }
-      : b));
-    dragState.current = {
-      id, startX: clientX, startY: clientY,
-      posX, posY, lastX: clientX, lastY: clientY,
-      velocityHistory: [],
+
+    // Auto-remove after animation completes
+    const timeout = setTimeout(() => {
+      img.remove();
+      delete activeBooks.current[id];
+      if (rafId) cancelAnimationFrame(rafId);
+    }, (duration + delay + 2) * 1000);
+
+    let rafId = null;
+
+    return () => {
+      clearTimeout(timeout);
+      if (rafId) cancelAnimationFrame(rafId);
+      img.remove();
+      delete activeBooks.current[id];
     };
   };
 
-  const onDragMove = (clientX, clientY) => {
-    if (!dragState.current) return;
-    const ds = dragState.current;
-    const dx = clientX - ds.lastX;
-    const dy = clientY - ds.lastY;
-    ds.posX += dx; ds.posY += dy;
-    ds.lastX = clientX; ds.lastY = clientY;
-    ds.velocityHistory.push({ vx: dx, vy: dy, t: Date.now() });
-    if (ds.velocityHistory.length > 8) ds.velocityHistory.shift();
-    setBooks(prev => prev.map(b => b.id === ds.id
-      ? { ...b, x: ds.posX, y: ds.posY }
-      : b));
-  };
-
-  const endDrag = () => {
-    if (!dragState.current) return;
-    const { id, velocityHistory } = dragState.current;
-    const recent = velocityHistory.filter(v => Date.now() - v.t < 150);
-    const vx = recent.length ? recent.reduce((a,v) => a + v.vx, 0) / recent.length * 2.2 : 0;
-    const vy = recent.length ? recent.reduce((a,v) => a + v.vy, 0) / recent.length * 2.2 : 0;
-    setBooks(prev => prev.map(b => b.id === id
-      ? { ...b, grabbed: false, vx, vy }
-      : b));
-    dragState.current = null;
-  };
-
-  // Mouse events — desktop only
   useEffect(() => {
-    if (isMobile) return;
-    const onMouseMove = e => onDragMove(e.clientX, e.clientY);
-    const onMouseUp   = () => endDrag();
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup",   onMouseUp);
+    const cleanups = [];
+    // Stagger initial books
+    [0,1,2,3,4].forEach(i => {
+      const t = setTimeout(() => {
+        const cleanup = spawnBook();
+        if (cleanup) cleanups.push(cleanup);
+      }, i * 900);
+      cleanups.push(() => clearTimeout(t));
+    });
+    // Interval spawn
+    const iv = setInterval(() => {
+      const cleanup = spawnBook();
+      if (cleanup) cleanups.push(cleanup);
+    }, 3800);
     return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup",   onMouseUp);
+      clearInterval(iv);
+      cleanups.forEach(fn => typeof fn === "function" && fn());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, books]);
-
-  // Touch events — mobile only, attached PER BOOK not on window
-  // This avoids blocking scroll — only fires when grabbing a book
-  const onTouchStart = (id, e) => {
-    // Only grab if user holds still for 120ms (distinguish from scroll)
-    const touch = e.touches[0];
-    const startX = touch.clientX, startY = touch.clientY;
-    const holdTimer = setTimeout(() => {
-      startDrag(id, startX, startY);
-    }, 120);
-    // If finger moves significantly before 120ms → it's a scroll, cancel grab
-    const onMove = (ev) => {
-      const t = ev.touches[0];
-      if (Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
-        clearTimeout(holdTimer);
-        window.removeEventListener("touchmove", onMove);
-      }
-    };
-    const onEnd = () => {
-      clearTimeout(holdTimer);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onEnd);
-    };
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onEnd, { passive: true });
-  };
-
-  // When a book IS grabbed on mobile, handle move/end
-  useEffect(() => {
-    if (!isMobile) return;
-    const grabbed = books.find(b => b.grabbed);
-    if (!grabbed) return;
-    const onMove = (e) => {
-      if (dragState.current) {
-        onDragMove(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    };
-    const onEnd = () => endDrag();
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onEnd, { passive: true });
-    return () => {
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onEnd);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, books.some(b => b.grabbed)]);
+  }, [isMobile]);
 
   return (
-    <div style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:50, overflow:"hidden" }}>
+    <div
+      ref={containerRef}
+      style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:50, overflow:"hidden" }}>
       <style>{`
         @keyframes bookFloatGlobal {
-          0%   { transform: translateY(0) rotate(var(--btilt)); opacity: 0; }
-          6%   { opacity: 0.72; }
-          92%  { opacity: 0.72; }
-          100% { transform: translateY(-115vh) rotate(var(--btilt)); opacity: 0; }
+          0%   { transform:translateY(0) rotate(var(--btilt)); opacity:0; }
+          6%   { opacity:0.72; }
+          92%  { opacity:0.72; }
+          100% { transform:translateY(-115vh) rotate(var(--btilt)); opacity:0; }
         }
       `}</style>
-      {books.map(b => {
-        const H = 220 * b.scale;
-        const isJS = b.x !== null;
-        return (
-          <img
-            key={b.id}
-            ref={el => { bookRefs.current[b.id] = el; }}
-            src={b.book.src}
-            alt={b.book.title}
-            draggable={false}
-            onMouseDown={isMobile ? undefined : e => { e.stopPropagation(); startDrag(b.id, e.clientX, e.clientY); }}
-            onTouchStart={isMobile ? e => onTouchStart(b.id, e) : undefined}
-            style={{
-              position: "fixed",
-              pointerEvents: "auto",
-              userSelect: "none",
-              WebkitUserSelect: "none",
-              height: H,
-              width: "auto",
-              cursor: isMobile ? "default" : (b.grabbed ? "grabbing" : "grab"),
-              touchAction: b.grabbed ? "none" : "auto",
-              ...(isJS ? {
-                left: b.x,
-                top: b.y,
-                transform: `rotate(${b.tilt}deg) scale(${b.grabbed ? 1.05 : 1})`,
-                transition: b.grabbed ? "transform 0.1s ease" : "none",
-                opacity: 0.78,
-              } : {
-                left: `${b.left}%`,
-                bottom: "-5%",
-                "--btilt": `${b.tilt}deg`,
-                animation: `bookFloatGlobal ${b.duration}s ease ${b.delay}s forwards`,
-                opacity: 0,
-              }),
-            }}
-          />
-        );
-      })}
     </div>
   );
 }
