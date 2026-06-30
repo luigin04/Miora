@@ -1158,6 +1158,34 @@ const TEMPLATE_LIBRARY = [
   // ── WEDDING — Forever Starts Here ────────────────────────────────────────
   { id:"tpl-wed2",     occasion:"Wedding",    title:"Forever Starts Here", desc:"Just Married Car",     coverImg:"/books/book-forever_justmarried.jpg", pages:[...makeCoverPages("#ddd2c0","#fff"), ...makeBlankPages(14)] },
 
+  // ── WEDDING ──────────────────────────────────────────────────────────────
+  { id:"tpl-wed3",     occasion:"Wedding",    title:"Our Wedding",         desc:"Linked Rings",         coverImg:"/books/book-wedding_rings.jpg",       pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-wed4",     occasion:"Wedding",    title:"Wedding Day",         desc:"Convertible Car",      coverImg:"/books/book-wedding_day_car.jpg",     pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-wed5",     occasion:"Wedding",    title:"Our Wedding",         desc:"Ring Box",             coverImg:"/books/book-wedding_ringbox.jpg",     pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+
+  // ── FRIENDSHIP ───────────────────────────────────────────────────────────
+  { id:"tpl-bff7",     occasion:"Friendship", title:"Best Friends Forever",desc:"Heart Polaroid",       coverImg:"/books/book-bff_polaroid.jpg",        pages:[...makeCoverPages("#fdf5e8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-galentine",occasion:"Friendship", title:"My Galentine",       desc:"Ribbon Bow",            coverImg:"/books/book-galentine_bow.jpg",       pages:[...makeCoverPages("#c0667e","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bff8",     occasion:"Friendship", title:"Sending You",        desc:"Lots of Love",          coverImg:"/books/book-lotsoflove_box.jpg",      pages:[...makeCoverPages("#f8c8dd","#fff"), ...makeBlankPages(14)] },
+
+  // ── ANNIVERSARY ──────────────────────────────────────────────────────────
+  { id:"tpl-anniv3",   occasion:"Anniversary",title:"2026",                desc:"Calendar",              coverImg:"/books/book-anniv_calendar2026.jpg",  pages:[...makeCoverPages("#faf3e6","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv4",   occasion:"Anniversary",title:"My Valentine",       desc:"Cherries & Bow",        coverImg:"/books/book-valentine_cherries.jpg",  pages:[...makeCoverPages("#3d0f0a","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv5",   occasion:"Anniversary",title:"My Love",            desc:"Love Coupon",           coverImg:"/books/book-love_coupon.jpg",         pages:[...makeCoverPages("#8a1538","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv6",   occasion:"Anniversary",title:"My Valentine",       desc:"Heart Lock",            coverImg:"/books/book-valentine_lock.jpg",      pages:[...makeCoverPages("#3d0f0a","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv7",   occasion:"Anniversary",title:"My Forever",         desc:"Single Rose",           coverImg:"/books/book-forever_rose.jpg",        pages:[...makeCoverPages("#3d0f0a","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv8",   occasion:"Anniversary",title:"Always You",         desc:"Heart Lock & Key",      coverImg:"/books/book-alwaysyou_lock.jpg",      pages:[...makeCoverPages("#fbdde6","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv9",   occasion:"Anniversary",title:"Me & You",           desc:"Heart Dice",            coverImg:"/books/book-meyou_dice.jpg",          pages:[...makeCoverPages("#9c1f1f","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-anniv10",  occasion:"Anniversary",title:"Our Story",          desc:"Fingerprint Heart",     coverImg:"/books/book-ourstory_fingerprint.jpg",pages:[...makeCoverPages("#fdf0ef","#fff"), ...makeBlankPages(14)] },
+
+  // ── FAMILY — Mother's Day ────────────────────────────────────────────────
+  { id:"tpl-fam1",     occasion:"Family",     title:"الى أمي",             desc:"Floral Box",            coverImg:"/books/book-mom_ar_box.jpg",          pages:[...makeCoverPages("#f0dde4","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam2",     occasion:"Family",     title:"For Mom",             desc:"Tulip Box",             coverImg:"/books/book-formom_tulipbox.jpg",     pages:[...makeCoverPages("#db8ca0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam3",     occasion:"Family",     title:"أمي",                 desc:"Paper Bag Florals",     coverImg:"/books/book-mom_ar_bag.jpg",          pages:[...makeCoverPages("#fae0e6","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam4",     occasion:"Family",     title:"ماما",                desc:"Watering Can Florals",  coverImg:"/books/book-mama_ar_can.jpg",         pages:[...makeCoverPages("#fae0ec","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam5",     occasion:"Family",     title:"ست الكل",             desc:"Mother's Day Bouquet",  coverImg:"/books/book-setelkol_bouquet.jpg",    pages:[...makeCoverPages("#fbe9e5","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam6",     occasion:"Family",     title:"Happy Mama Day",      desc:"Holding Hands",         coverImg:"/books/book-mamaday_hands.jpg",       pages:[...makeCoverPages("#fdf8ed","#fff"), ...makeBlankPages(14)] },
+
   // ── Existing SVG-based templates ──────────────────────────────────────────
   { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
     pages:[...makeCoverPages("#fff0f5",[{id:"e1",type:"text",content:"OUR\nWEDDING\nDAY",x:30,y:30,w:340,h:120,font:"Londrina Solid",fontSize:52,color:"#c0506a",bold:false,italic:false,rotation:0},{id:"e2",type:"text",content:"Est. 2026",x:120,y:160,w:160,h:36,font:"Dancing Script",fontSize:22,color:"#c0506a",bold:false,italic:true,rotation:0},{id:"e3",type:"sticker",content:"🌹",x:280,y:140,w:70,h:70,rotation:-15},{id:"e4",type:"sticker",content:"💐",x:20,y:140,w:60,h:60,rotation:12}]),...makeBlankPages(14)] },
