@@ -402,10 +402,10 @@ export default function MioraPlatform() {
 
   // ── Home ───────────────────────────────────────────────────────────────────
   return (
-    <div dir={dir} style={{ fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:WARM_WHITE, minHeight:"100vh", overflowX:"hidden" }}>
+    <div dir={dir} style={{ fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:WARM_WHITE, minHeight:"100vh", overflowX:"hidden", position:"relative", zIndex:2 }}>
       <link href={FONT_LINK} rel="stylesheet" />
 
-      {/* Global floating interactive books — fixed overlay over entire site */}
+      {/* Global floating interactive books — sits behind all page content */}
       <FloatingBooksLayer />
 
       {/* Save Toast */}
@@ -832,7 +832,7 @@ function FloatingBooksLayer() {
   return (
     <div
       ref={containerRef}
-      style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:50, overflow:"hidden" }}>
+      style={{ position:"fixed", inset:0, pointerEvents:"none", zIndex:1, overflow:"hidden" }}>
       <style>{`
         @keyframes bookFloatGlobal {
           0%   { transform:translateY(0) rotate(var(--btilt)); opacity:0; }
