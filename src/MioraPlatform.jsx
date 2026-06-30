@@ -332,25 +332,10 @@ export default function MioraPlatform() {
     return <TemplatePickerView
       onBack={() => setCurrentView("home")}
       onSelect={(template) => {
+        // Create a new project pre-seeded with the chosen template
         const pid = createProject("template", template.occasion);
-        // For image-based templates, set the cover page background to the cover image
-        let pages = template.pages;
-        if (template.coverImg) {
-          const coverId = "cover-el-" + Math.random().toString(36).slice(2);
-          pages = pages.map((pg, i) => {
-            if (i !== 1) return pg; // index 1 = front cover page
-            return {
-              ...pg,
-              background: "#ffffff",
-              elements: [{
-                id: coverId, type:"image", src: template.coverImg,
-                x:0, y:0, w:400, h:520, rotation:0
-              }]
-            };
-          });
-        }
         setProjects(prev => prev.map(p => p.id === pid
-          ? { ...p, title: template.title, pages }
+          ? { ...p, title: template.title, pages: template.pages }
           : p
         ));
         setActiveProjectId(pid);
@@ -360,14 +345,6 @@ export default function MioraPlatform() {
     />;
   }
   const editorModes = ["editor-manual","editor-ai","editor-template"];
-  if (currentView === "editor-ai" && !activeProjectId) {
-    return <AIDesignFlow
-      onBack={() => setCurrentView("home")}
-      onComplete={(pid) => { setActiveProjectId(pid); setCurrentView("editor-ai"); }}
-      projects={projects} setProjects={setProjects} createProject={createProject} updateProject={updateProject}
-      t={t} lang={lang} isRTL={isRTL} isMobile={isMobile}
-    />;
-  }
   if (editorModes.includes(currentView)) {
     const mode = currentView.replace("editor-","");
     let pid = activeProjectId;
@@ -873,12 +850,8 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
 
   // Position: always centered until phase 3
   const isShrunken = phase >= 3;
-
-  // On mobile: shift right during open so the flipping cover has space to swing left
-  const mobileShift = isMobile && phase === 1 ? "30%" : "-50%";
-
   const bookLeft = isShrunken ? (isMobile ? "50%" : "7%") : "50%";
-  const bookTX   = isShrunken && !isMobile ? "0%" : mobileShift;
+  const bookTX   = isShrunken && !isMobile ? "0%" : "-50%";
   const bookScale = isShrunken ? 1 : (isMobile ? 1.6 : 2.2);
 
   return (
@@ -908,9 +881,11 @@ function CinematicHero({ isMobile, t, lang, projects, setCurrentView }) {
         {/* Cover — rotates from center on mobile, left edge on desktop */}
         <div style={{
           position:"absolute", inset:0,
-          transformOrigin: "left center",
+          transformOrigin: isMobile ? "center center" : "left center",
           transformStyle:"preserve-3d",
-          transform: phase === 1 ? "rotateY(-155deg)" : "rotateY(0deg)",
+          transform: phase === 1
+            ? (isMobile ? "rotateY(180deg)" : "rotateY(-160deg)")
+            : "rotateY(0deg)",
           transition: phase === 2
             ? "transform 0.65s cubic-bezier(0.55,0,0.45,1)"
             : "transform 1.0s cubic-bezier(0.4,0,0.2,1)",
@@ -1143,78 +1118,45 @@ const TEMPLATE_LIBRARY = [
   { id:"tpl-honey3",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",coverImg:"/books/book-japan_branch_honey.png",  pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
   { id:"tpl-honey4",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Japanese Fan",         coverImg:"/books/book-japan_fan_honey.png",     pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
 
-  // ── WEDDING — Japan Honeymoon (new) ─────────────────────────────────────
-  { id:"tpl-honey5",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",  coverImg:"/books/book-japan_branch_honey2.jpg",   pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-honey6",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Japanese Fan Pink",      coverImg:"/books/book-japan_fan_honey2.jpg",      pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Turkey ──────────────────────────────────────────────────────
+  { id:"tpl-turkey1",  occasion:"Travel",     title:"Turkey",              desc:"Istanbul | Cappadocia",coverImg:"/books/book-turkey_balloon.jpg",      pages:[...makeCoverPages("#fdf8c5","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Japan (new) ─────────────────────────────────────────────────
-  { id:"tpl-jp4",      occasion:"Travel",     title:"Japan 2025",          desc:"Pink Lantern Alt",       coverImg:"/books/book-japan_lantern_2025b.jpg",   pages:[...makeCoverPages("#f4a0b0","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Spain ───────────────────────────────────────────────────────
+  { id:"tpl-spain1",   occasion:"Travel",     title:"Spain",               desc:"Flamenco Fan",         coverImg:"/books/book-spain_fan.jpg",           pages:[...makeCoverPages("#e8f7f7","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-spain2",   occasion:"Travel",     title:"Spain",               desc:"Pomegranate",          coverImg:"/books/book-spain_pomegranate.jpg",   pages:[...makeCoverPages("#f8d8dd","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-spain3",   occasion:"Travel",     title:"Spain",               desc:"Arc de Triomf",        coverImg:"/books/book-spain_arc.jpg",           pages:[...makeCoverPages("#faf3e6","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — France / Paris ───────────────────────────────────────────────
-  { id:"tpl-fra1",     occasion:"Travel",     title:"France Paris",        desc:"Steel Blue Postcards",   coverImg:"/books/book-france_paris_blue.jpg",     pages:[...makeCoverPages("#4a7aa0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-par1",     occasion:"Travel",     title:"Paris France",        desc:"Pink Eiffel Tower",      coverImg:"/books/book-paris_pink.jpg",            pages:[...makeCoverPages("#f080b0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-par2",     occasion:"Travel",     title:"Paris France",        desc:"Red Eiffel Tower",       coverImg:"/books/book-paris_red.jpg",             pages:[...makeCoverPages("#b02020","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Bali ────────────────────────────────────────────────────────
+  { id:"tpl-bali1",    occasion:"Travel",     title:"Bali",                desc:"Frangipani Flower",    coverImg:"/books/book-bali_flower.jpg",         pages:[...makeCoverPages("#f0d8f5","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bali2",    occasion:"Travel",     title:"Bali",                desc:"Ocean Wave",           coverImg:"/books/book-bali_wave.jpg",           pages:[...makeCoverPages("#eef3f7","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bali3",    occasion:"Travel",     title:"Bali 2026",           desc:"Surfboards",           coverImg:"/books/book-bali_surf.jpg",           pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Italy Venice ─────────────────────────────────────────────────
-  { id:"tpl-ven1",     occasion:"Travel",     title:"Italy Venice",        desc:"Canal Scene",            coverImg:"/books/book-italy_venice_scene.jpg",    pages:[...makeCoverPages("#d8e8d0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-ven2",     occasion:"Travel",     title:"Italy Venice",        desc:"Beige Vespa",            coverImg:"/books/book-italy_venice_vespa_beige.jpg", pages:[...makeCoverPages("#f0e8d0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-ven3",     occasion:"Travel",     title:"Italy Venice",        desc:"Yellow Lemon Branch",    coverImg:"/books/book-italy_lemons_yellow.jpg",   pages:[...makeCoverPages("#f8f0b0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-ven4",     occasion:"Travel",     title:"Italy Venice",        desc:"Yellow Vespa",           coverImg:"/books/book-italy_vespa_yellow.jpg",    pages:[...makeCoverPages("#f8f0b0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-ven5",     occasion:"Travel",     title:"Italy Venice",        desc:"Rialto Bridge",          coverImg:"/books/book-italy_venice_bridge.jpg",   pages:[...makeCoverPages("#f8f0b0","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — New York ────────────────────────────────────────────────────
+  { id:"tpl-nyc1",     occasion:"Travel",     title:"New York",            desc:"Statue of Liberty",    coverImg:"/books/book-newyork_liberty.jpg",     pages:[...makeCoverPages("#f0a0d8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Italy 2025 ───────────────────────────────────────────────────
-  { id:"tpl-it4",      occasion:"Travel",     title:"Italy 2025",          desc:"Lemons Stripe Blue",     coverImg:"/books/book-italy_lemons_stripe.jpg",   pages:[...makeCoverPages("#c8e0f8","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Montreal ────────────────────────────────────────────────────
+  { id:"tpl-mtl1",     occasion:"Travel",     title:"Montreal",            desc:"Skyline 2024",         coverImg:"/books/book-montreal_skyline.jpg",    pages:[...makeCoverPages("#a8bcc8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Middle East ─────────────────────────────────────────────────
-  { id:"tpl-jor1",  occasion:"Travel", title:"Jordan",             desc:"Petra Treasury",       coverImg:"/books/book-jordan_petra.jpg",        pages:[...makeCoverPages("#f5e8d8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-mes1",  occasion:"Travel", title:"Mesopotamia",        desc:"Ancient Domes",        coverImg:"/books/book-mesopotamia.jpg",         pages:[...makeCoverPages("#f5e8d8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-pal1",  occasion:"Travel", title:"Palestine",          desc:"Watermelon Pink",      coverImg:"/books/book-palestine.jpg",           pages:[...makeCoverPages("#f8c8c8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-leb1",  occasion:"Travel", title:"Lebanon 2026",       desc:"Raouche Rocks",        coverImg:"/books/book-lebanon_2026.jpg",        pages:[...makeCoverPages("#b8d8f8","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Bangkok ─────────────────────────────────────────────────────
+  { id:"tpl-bkk1",     occasion:"Travel",     title:"Bangkok",             desc:"Tuk Tuk Taxi",         coverImg:"/books/book-bangkok_tuktuk.jpg",      pages:[...makeCoverPages("#faf3a8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Europe ──────────────────────────────────────────────────────
-  { id:"tpl-bcn1",  occasion:"Travel", title:"Barcelona España",   desc:"Sagrada Familia",      coverImg:"/books/book-barcelona_spain.jpg",     pages:[...makeCoverPages("#d8a8f0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-ams1",  occasion:"Travel", title:"Amsterdam",          desc:"Canal Houses Purple",  coverImg:"/books/book-amsterdam.jpg",           pages:[...makeCoverPages("#7a5090","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Belgium ─────────────────────────────────────────────────────
+  { id:"tpl-bel1",     occasion:"Travel",     title:"Belgium",             desc:"Chocolate Heart",      coverImg:"/books/book-belgium_chocolate.jpg",   pages:[...makeCoverPages("#e8716a","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bel2",     occasion:"Travel",     title:"Belgium",             desc:"Waffle Heart",         coverImg:"/books/book-belgium_waffleheart.jpg", pages:[...makeCoverPages("#5a4632","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bel3",     occasion:"Travel",     title:"Belgium",             desc:"Waffle Stack",         coverImg:"/books/book-belgium_wafflestack.jpg", pages:[...makeCoverPages("#f5c8d8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Maldives ────────────────────────────────────────────────────
-  { id:"tpl-mld1",  occasion:"Travel", title:"Maldives",           desc:"Overwater Bungalows",  coverImg:"/books/book-maldives_huts.jpg",       pages:[...makeCoverPages("#70d8e8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-mld2",  occasion:"Travel", title:"Maldives",           desc:"Postage Stamp",        coverImg:"/books/book-maldives_stamp.jpg",      pages:[...makeCoverPages("#70d8e8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-mld3",  occasion:"Travel", title:"Maldives",           desc:"Dark Teal Coral",      coverImg:"/books/book-maldives_coral_dark.jpg", pages:[...makeCoverPages("#1a5050","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-mld4",  occasion:"Travel", title:"Maldives 2022-2025", desc:"Pink Coral",           coverImg:"/books/book-maldives_pink.jpg",       pages:[...makeCoverPages("#e06080","#fff"), ...makeBlankPages(14)] },
+  // ── ANNIVERSARY — Us, Always ─────────────────────────────────────────────
+  { id:"tpl-anniv2",   occasion:"Anniversary",title:"Us, Always",          desc:"Heart Polaroids",      coverImg:"/books/book-us_always.jpg",           pages:[...makeCoverPages("#ced0f8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Hurghada / Egypt ─────────────────────────────────────────────
-  { id:"tpl-hrg1",  occasion:"Travel", title:"Hurghada",           desc:"Pink Coral",           coverImg:"/books/book-hurghada_pink.jpg",       pages:[...makeCoverPages("#f8c8e8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-hrg2",  occasion:"Travel", title:"Hurghada Egypt",     desc:"Blue Coral",           coverImg:"/books/book-hurghada_blue.jpg",       pages:[...makeCoverPages("#a8d0f8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-hrg3",  occasion:"Travel", title:"Hurghada 25-26",     desc:"Sea Life Green",       coverImg:"/books/book-hurghada_green.jpg",      pages:[...makeCoverPages("#c8f0c8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-hrg4",  occasion:"Travel", title:"Hurghada Egypt",     desc:"Shells Stamp",         coverImg:"/books/book-hurghada_stamp.jpg",      pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-egt1",  occasion:"Travel", title:"Egypt Hurghada",     desc:"Sky Blue Pyramids",    coverImg:"/books/book-egypt_hurghada_sky.jpg",  pages:[...makeCoverPages("#40c0f0","#fff"), ...makeBlankPages(14)] },
+  // ── FRIENDSHIP ───────────────────────────────────────────────────────────
+  { id:"tpl-bff2",     occasion:"Friendship", title:"Years of Friendship", desc:"Gift Box Tulips",      coverImg:"/books/book-years_friendship.jpg",    pages:[...makeCoverPages("#db8ca0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bff3",     occasion:"Friendship", title:"BFFs",                desc:"Floral Box",           coverImg:"/books/book-bffs_box.jpg",            pages:[...makeCoverPages("#e0d8f8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bff4",     occasion:"Friendship", title:"My BFFs",             desc:"Watering Can Florals", coverImg:"/books/book-bffs_wateringcan.jpg",    pages:[...makeCoverPages("#faf3e6","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bff5",     occasion:"Friendship", title:"Bestfriends Forever", desc:"Paper Bag Florals",    coverImg:"/books/book-bff_paperbag.jpg",        pages:[...makeCoverPages("#f8d8e8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bff6",     occasion:"Friendship", title:"Bestfriends Forever", desc:"Pink Lily",            coverImg:"/books/book-bff_lily.jpg",            pages:[...makeCoverPages("#fae0e8","#fff"), ...makeBlankPages(14)] },
 
-  // ── TRAVEL — Sahel ───────────────────────────────────────────────────────
-  { id:"tpl-shl1",  occasion:"Travel", title:"Sahel 2025",         desc:"Light Blue Coral",     coverImg:"/books/book-sahel_2025.jpg",          pages:[...makeCoverPages("#a8e8f8","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Thailand ────────────────────────────────────────────────────
-  { id:"tpl-tha1",  occasion:"Travel", title:"Thailand Islands",   desc:"Sea Turtle",           coverImg:"/books/book-thailand_turtle.jpg",     pages:[...makeCoverPages("#c8f0e8","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Zanzibar ────────────────────────────────────────────────────
-  { id:"tpl-znz1",  occasion:"Travel", title:"Zanzibar Paradise",  desc:"Navy Starfish",        coverImg:"/books/book-zanzibar_navy.jpg",       pages:[...makeCoverPages("#303878","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-znz2",  occasion:"Travel", title:"Zanzibar 2026",      desc:"Blue Palm Tree",       coverImg:"/books/book-zanzibar_blue.jpg",       pages:[...makeCoverPages("#a8d8f8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-znz3",  occasion:"Travel", title:"Zanzibar Tanzania",  desc:"Safari Giraffe",       coverImg:"/books/book-zanzibar_tanzania.jpg",   pages:[...makeCoverPages("#e8a878","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Thailand (new) ──────────────────────────────────────────────
-  { id:"tpl-tha2",  occasion:"Travel", title:"Thailand",           desc:"Longtail Boat",        coverImg:"/books/book-thailand_boat.jpg",       pages:[...makeCoverPages("#90d8c0","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Bodrum Turkey ────────────────────────────────────────────────
-  { id:"tpl-bdr1",  occasion:"Travel", title:"Bodrum Turkey",      desc:"Sea Turtle",           coverImg:"/books/book-bodrum_turtle.jpg",       pages:[...makeCoverPages("#c8f0e8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-bdr2",  occasion:"Travel", title:"Bodrum Turkey",      desc:"Teal Coral",           coverImg:"/books/book-bodrum_coral.jpg",        pages:[...makeCoverPages("#c8f0e8","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-bdr3",  occasion:"Travel", title:"Bodrum Turkey",      desc:"Luxury Yacht",         coverImg:"/books/book-bodrum_yacht.jpg",        pages:[...makeCoverPages("#5888a8","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Greece ───────────────────────────────────────────────────────
-  { id:"tpl-san1",  occasion:"Travel", title:"Santorini Greece",   desc:"Blue Domes",           coverImg:"/books/book-santorini_greece.jpg",    pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Georgia ─────────────────────────────────────────────────────
-  { id:"tpl-geo1",  occasion:"Travel", title:"Georgia",            desc:"Pink Cathedral",       coverImg:"/books/book-georgia_church.jpg",      pages:[...makeCoverPages("#f0c0e8","#fff"), ...makeBlankPages(14)] },
-
-  // ── TRAVEL — Cappadocia ───────────────────────────────────────────────────
-  { id:"tpl-cap1",  occasion:"Travel", title:"Cappadocia Turkey",  desc:"Hot Air Balloon",      coverImg:"/books/book-cappadocia_turkey.jpg",   pages:[...makeCoverPages("#f5e8d8","#fff"), ...makeBlankPages(14)] },
+  // ── WEDDING — Forever Starts Here ────────────────────────────────────────
+  { id:"tpl-wed2",     occasion:"Wedding",    title:"Forever Starts Here", desc:"Just Married Car",     coverImg:"/books/book-forever_justmarried.jpg", pages:[...makeCoverPages("#ddd2c0","#fff"), ...makeBlankPages(14)] },
 
   // ── Existing SVG-based templates ──────────────────────────────────────────
   { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
@@ -1238,397 +1180,10 @@ const TEMPLATE_BY_OCCASION = TEMPLATE_LIBRARY.reduce((acc, tpl) => {
 
 const TEMPLATE_OCCASIONS = Object.keys(TEMPLATE_BY_OCCASION);
 
-// ─── AI Design Flow ───────────────────────────────────────────────────────────
-// Step 1: Pick a template (or blank)
-// Step 2: Upload photos (min 30 pages worth)
-// Step 3: AI scatters photos across pages with varied layouts + matching stickers
-function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject, updateProject, t, lang, isRTL, isMobile }) {
-  const [step, setStep] = useState(1);
-  const [chosenTemplate, setChosenTemplate] = useState(null);
-  const [photos, setPhotos] = useState([]);
-  const [search, setSearch] = useState("");
-  const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
-  const [hovered, setHovered] = useState(null);
-
-  const occasionAr = {
-    Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
-    "Baby Shower":"استقبال مولود", Graduation:"تخرج",
-    Family:"عائلة", Anniversary:"ذكرى سنوية", Engagement:"خطوبة",
-    Friendship:"صداقة",
-  };
-
-  const searchResults = search.trim()
-    ? TEMPLATE_LIBRARY.filter(tpl =>
-        tpl.title.toLowerCase().includes(search.toLowerCase()) ||
-        tpl.occasion.toLowerCase().includes(search.toLowerCase()))
-    : null;
-
-  // ── Photo upload handler ─────────────────────────────────────────────────
-  const handlePhotoUpload = (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setPhotos(prev => [...prev, ev.target.result]);
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // ── AI Layout Engine ─────────────────────────────────────────────────────
-  const generateAlbum = async () => {
-    if (photos.length < 5) return;
-    setStep(3);
-
-    // Page layout patterns — varied to make each spread unique
-    const LAYOUTS = [
-      // Single full-page image
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:pageH-20 }
-      ],
-      // Two landscape images stacked
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH/2)-15 },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH/2)+5, w:pageW-20, h:(pageH/2)-15 },
-      ],
-      // Three images: big left, two right
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW/2)-15, h:pageH-20 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW/2)+5, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[2]||photos[0], x:(pageW/2)+5, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-      ],
-      // Four equal grid
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW/2)+5, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[2]||photos[0], x:10, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[3]||photos[0], x:(pageW/2)+5, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-      ],
-      // Big top, two bottom
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH*0.55) },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH*0.55)+10, w:(pageW/2)-15, h:(pageH*0.42) },
-        { type:"image", src:photos[2]||photos[0], x:(pageW/2)+5, y:(pageH*0.55)+10, w:(pageW/2)-15, h:(pageH*0.42) },
-      ],
-      // Three horizontal strips
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH/3)-12 },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH/3)+5, w:pageW-20, h:(pageH/3)-12 },
-        { type:"image", src:photos[2]||photos[0], x:10, y:(2*pageH/3)+5, w:pageW-20, h:(pageH/3)-15 },
-      ],
-      // Portrait left, square stack right
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW*0.6)-15, h:pageH-20 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW*0.6)+5, y:10, w:(pageW*0.4)-15, h:(pageH/3)-5 },
-        { type:"image", src:photos[2]||photos[0], x:(pageW*0.6)+5, y:(pageH/3)+8, w:(pageW*0.4)-15, h:(pageH/3)-5 },
-        { type:"image", src:photos[3]||photos[0], x:(pageW*0.6)+5, y:(2*pageH/3)+8, w:(pageW*0.4)-15, h:(pageH/3)-18 },
-      ],
-    ];
-
-    // Sticker packs per occasion
-    const OCCASION_STICKERS = {
-      Travel:      ["✈️","🗺️","📸","🌍","🧳","🌊","⭐","🏖️","🌴","🗻"],
-      Wedding:     ["💍","🌹","💐","💕","✨","🥂","💒","🎀","🕊️","❤️"],
-      Anniversary: ["❤️","🥂","💕","🌹","✨","💑","🎊","💖"],
-      Birthday:    ["🎂","🎉","🎈","🎁","🎊","⭐","🥳","🍰"],
-      "Baby Shower":["🍼","👶","🧸","⭐","🌙","💙","🎀","🌈"],
-      Graduation:  ["🎓","🏆","📚","⭐","🎉","🎊","💪"],
-      Family:      ["🏡","❤️","💕","⭐","🌻","👨‍👩‍👧‍👦"],
-      Friendship:  ["💕","🌸","✨","🎉","😊","💜"],
-      Engagement:  ["💍","✨","💕","🥂","💐","🌹"],
-    };
-
-    const occasion = chosenTemplate?.occasion || "Travel";
-    const stickers = OCCASION_STICKERS[occasion] || OCCASION_STICKERS.Travel;
-
-    // Shuffle photos for variety
-    const shuffled = [...photos].sort(() => Math.random() - 0.5);
-
-    // Calculate how many pages we need
-    const totalPhotos = shuffled.length;
-    const minPages = Math.max(30, totalPhotos + 4); // at least 30 pages
-    const pages = [];
-    let photoIdx = 0;
-
-    // Cover pages from template (if chosen)
-    const coverPages = chosenTemplate?.pages?.slice(0, 2) || [
-      { id:"back-"+generateId(), background:"#ffffff", elements:[] },
-      { id:"front-"+generateId(), background:"#ffffff", elements:
-        chosenTemplate?.coverImg ? [{ id:"cv-"+generateId(), type:"image", src:chosenTemplate.coverImg, x:0, y:0, w:400, h:520, rotation:0 }] : []
-      },
-    ];
-    pages.push(...coverPages);
-
-    // Interior pages with AI layouts
-    for (let i = 0; i < minPages - 2; i++) {
-      const layoutIdx = i % LAYOUTS.length;
-      const layout = LAYOUTS[layoutIdx];
-      const photosNeeded = layout.length || 1;
-
-      // Grab photos for this page (cycle if we run out)
-      const pagePhotos = [];
-      for (let j = 0; j < photosNeeded; j++) {
-        pagePhotos.push(shuffled[photoIdx % shuffled.length]);
-        photoIdx++;
-      }
-
-      const elements = layout(pagePhotos).map(el => ({
-        ...el,
-        id: generateId(),
-        rotation: (Math.random() - 0.5) * 3, // subtle tilt
-      }));
-
-      // Add a sticker on ~40% of pages
-      if (Math.random() < 0.4 && stickers.length > 0) {
-        const sticker = stickers[Math.floor(Math.random() * stickers.length)];
-        const size = 40 + Math.random() * 30;
-        elements.push({
-          id: generateId(), type:"sticker", content:sticker,
-          x: 10 + Math.random() * 330, y: 10 + Math.random() * 450,
-          w:size, h:size, rotation:(Math.random()-0.5)*30,
-        });
-      }
-
-      // Random background: mostly white, occasionally a light tint
-      const bgs = ["#ffffff","#ffffff","#ffffff","#fff8fe","#f8f8ff","#fff9f5"];
-      const bg = bgs[Math.floor(Math.random() * bgs.length)];
-
-      pages.push({ id: generateId(), background:bg, elements });
-    }
-
-    // Create project with generated pages
-    const pid = createProject("ai", occasion);
-    updateProject(pid, {
-      title: chosenTemplate?.title || "My Album",
-      pages,
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-    onComplete(pid);
-  };
-
-  // ── Step 3: Generating screen ─────────────────────────────────────────────
-  if (step === 3) {
-    return (
-      <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center",
-        justifyContent:"center", background:`linear-gradient(160deg,${SOFT_PINK},${WARM_WHITE})`,
-        fontFamily:"'Quicksand',sans-serif", gap:24 }}>
-        <link href={FONT_LINK} rel="stylesheet" />
-        <div style={{ width:60, height:60, borderRadius:"50%", border:`4px solid ${PASTEL_PURPLE}30`,
-          borderTop:`4px solid ${DEEP_PURPLE}`, animation:"spin 0.8s linear infinite" }} />
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:DARK_PURPLE }}>
-          {t("Designing your album…","جاري تصميم ألبومك…")}
-        </div>
-        <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, textAlign:"center", maxWidth:300 }}>
-          {t(`Arranging ${photos.length} photos across ${Math.max(30, photos.length+4)} pages`,
-             `ترتيب ${photos.length} صورة على ${Math.max(30, photos.length+4)} صفحة`)}
-        </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    );
-  }
-
-  // ── Step 2: Upload photos ─────────────────────────────────────────────────
-  if (step === 2) {
-    const minPhotos = 5;
-    const ready = photos.length >= minPhotos;
-    return (
-      <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(160deg,${SOFT_PINK}30,${WARM_WHITE})`,
-        fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
-        <link href={FONT_LINK} rel="stylesheet" />
-        <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`,
-          padding: isMobile?"14px 16px":"16px 32px", display:"flex", alignItems:"center",
-          justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
-          <button onClick={() => setStep(1)} style={backBtnStyle}>← {t("Back","عودة")}</button>
-          <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:18, color:DEEP_PURPLE, letterSpacing:2 }}>
-            {t("Add Your Photos","أضف صورك")}
-          </div>
-          <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5 }}>{t("Step 2 of 2","خطوة 2 من 2")}</div>
-        </div>
-
-        <div style={{ maxWidth:700, margin:"0 auto", padding: isMobile?"24px 16px":"40px 32px" }}>
-          <div style={{ textAlign:"center", marginBottom:32 }}>
-            {chosenTemplate?.coverImg && (
-              <img src={chosenTemplate.coverImg} alt="" style={{ height:80, borderRadius:6, marginBottom:16, boxShadow:"0 2px 12px rgba(74,48,104,0.15)" }} />
-            )}
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:24, color:DARK_PURPLE, marginBottom:8 }}>
-              {t("Upload your photos","ارفع صورك")}
-            </h2>
-            <p style={{ fontSize:14, color:DARK_PURPLE, opacity:0.55, lineHeight:1.7 }}>
-              {t("Our AI will automatically arrange your photos into a beautiful album. Upload as many as you like — more photos means a richer album.",
-                 "سيقوم الذكاء الاصطناعي بترتيب صورك تلقائياً في ألبوم جميل. ارفع أكثر ما يمكن — المزيد من الصور يعني ألبوماً أكثر ثراءً.")}
-            </p>
-          </div>
-
-          {/* Upload area */}
-          <label style={{ display:"block", border:`2px dashed ${PASTEL_PURPLE}50`, borderRadius:16,
-            padding:"40px 24px", textAlign:"center", cursor:"pointer", background:"white",
-            transition:"all 0.2s ease", marginBottom:24 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor=DEEP_PURPLE}
-            onMouseLeave={e => e.currentTarget.style.borderColor=`${PASTEL_PURPLE}50`}>
-            <div style={{ marginBottom:12, opacity:0.4 }}><Icon name="upload" size={48} color={DEEP_PURPLE} /></div>
-            <div style={{ fontSize:16, fontWeight:700, color:DARK_PURPLE, marginBottom:6 }}>
-              {t("Click to add photos","اضغط لإضافة صور")}
-            </div>
-            <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.4 }}>
-              {t("JPG, PNG supported — select multiple at once","JPG وPNG مدعومة — يمكن اختيار عدة صور دفعة واحدة")}
-            </div>
-            <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} style={{ display:"none" }} />
-          </label>
-
-          {/* Photo count + preview strip */}
-          {photos.length > 0 && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:DARK_PURPLE, marginBottom:12 }}>
-                {photos.length} {t("photos added","صورة تمت إضافتها")}
-                <span style={{ fontSize:12, fontWeight:400, opacity:0.5, marginLeft:8 }}>
-                  → {Math.max(30, photos.length + 4)} {t("pages","صفحة")}
-                </span>
-              </div>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {photos.slice(0,12).map((src, i) => (
-                  <div key={i} style={{ width:64, height:64, borderRadius:8, overflow:"hidden",
-                    border:`2px solid ${PASTEL_PURPLE}30`, flexShrink:0 }}>
-                    <img src={src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                  </div>
-                ))}
-                {photos.length > 12 && (
-                  <div style={{ width:64, height:64, borderRadius:8, background:`${PASTEL_PURPLE}20`,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:13, fontWeight:700, color:DEEP_PURPLE }}>
-                    +{photos.length - 12}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Generate button */}
-          <button onClick={generateAlbum} disabled={!ready}
-            style={{ width:"100%", padding:"16px", borderRadius:14, border:"none",
-              background: ready ? `linear-gradient(135deg,${DEEP_PURPLE},#7B5EA7)` : `${PASTEL_PURPLE}30`,
-              color: ready ? "white" : DARK_PURPLE, fontSize:16, fontWeight:700,
-              cursor: ready ? "pointer" : "not-allowed", fontFamily:"'Quicksand',sans-serif",
-              display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-              transition:"all 0.3s ease" }}>
-            <Icon name="sparkles" size={20} color={ready?"white":DARK_PURPLE} />
-            {ready
-              ? t(`Generate My ${Math.max(30, photos.length+4)}-Page Album`, `إنشاء ألبومي بـ ${Math.max(30, photos.length+4)} صفحة`)
-              : t(`Add at least ${minPhotos} photos to continue`, `أضف ${minPhotos} صور على الأقل للمتابعة`)}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Step 1: Choose template ─────────────────────────────────────────────
-  const visibleTemplates = searchResults || TEMPLATE_BY_OCCASION[activeOccasion] || [];
-
-  return (
-    <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(160deg,${SOFT_PINK}30,${WARM_WHITE})`,
-      fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
-      <link href={FONT_LINK} rel="stylesheet" />
-      <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`,
-        padding: isMobile?"14px 16px":"16px 32px", display:"flex", alignItems:"center",
-        justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
-        <button onClick={onBack} style={backBtnStyle}>← {t("Back","عودة")}</button>
-        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:18, color:DEEP_PURPLE, letterSpacing:2 }}>
-          {t("AI Album Design","تصميم ألبوم ذكي")}
-        </div>
-        <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5 }}>{t("Step 1 of 2","خطوة 1 من 2")}</div>
-      </div>
-
-      <div style={{ maxWidth:900, margin:"0 auto", padding: isMobile?"24px 16px":"40px 32px" }}>
-        <div style={{ textAlign:"center", marginBottom:28 }}>
-          <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile?22:28, color:DARK_PURPLE, marginBottom:8 }}>
-            {t("Choose a Cover Template","اختر غلاف الألبوم")}
-          </h1>
-          <p style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>
-            {t("Our AI will design the interior. You just pick the cover and upload your photos.",
-               "سيصمم الذكاء الاصطناعي الصفحات الداخلية. فقط اختر الغلاف وارفع صورك.")}
-          </p>
-        </div>
-
-        {/* Search */}
-        <div style={{ position:"relative", marginBottom:20, maxWidth:440, margin:"0 auto 20px" }}>
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={t("Search… Japan, Wedding, London","ابحث… اليابان، زفاف، لندن")}
-            style={{ width:"100%", padding:"11px 16px 11px 40px", border:`1.5px solid ${PASTEL_PURPLE}40`,
-              borderRadius:12, fontSize:13, outline:"none", fontFamily:"'Quicksand',sans-serif",
-              color:DARK_PURPLE, background:"white" }} />
-          <div style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", opacity:0.35 }}>
-            <Icon name="image" size={15} color={DARK_PURPLE} />
-          </div>
-          {search && <button onClick={() => setSearch("")} style={{ position:"absolute", right:10,
-            top:"50%", transform:"translateY(-50%)", background:"none", border:"none",
-            cursor:"pointer", fontSize:14, color:DARK_PURPLE, opacity:0.4 }}>✕</button>}
-        </div>
-
-        {/* Occasion tabs — hidden when searching */}
-        {!search && (
-          <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:8, marginBottom:24,
-            justifyContent: isMobile?"flex-start":"center", flexWrap: isMobile?"nowrap":"wrap" }}>
-            {TEMPLATE_OCCASIONS.map(occ => (
-              <button key={occ} onClick={() => setActiveOccasion(occ)} style={{
-                padding: isMobile?"7px 12px":"9px 18px", borderRadius:20, fontSize:12,
-                fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"'Quicksand',sans-serif",
-                border: activeOccasion===occ ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}40`,
-                background: activeOccasion===occ ? `${PASTEL_PURPLE}25` : "white",
-                color: activeOccasion===occ ? DEEP_PURPLE : DARK_PURPLE,
-                transition:"all 0.2s", flexShrink:0 }}>
-                {t(occ, occasionAr[occ] || occ)}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Template grid */}
-        <div style={{ display:"flex", gap: isMobile?12:20, flexWrap:"wrap", justifyContent:"center", marginBottom:24 }}>
-          {visibleTemplates.map(tpl => (
-            <div key={tpl.id}
-              onClick={() => { setChosenTemplate(tpl); setStep(2); }}
-              style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10,
-                cursor:"pointer", transition:"transform 0.2s ease",
-                transform: hovered===tpl.id ? "translateY(-4px)" : "none" }}
-              onMouseEnter={() => setHovered(tpl.id)}
-              onMouseLeave={() => setHovered(null)}>
-              <img src={tpl.coverImg || "/books/miora-cover.jpg"} alt={tpl.title}
-                style={{ height: isMobile?120:150, width:"auto", borderRadius:6,
-                  boxShadow: hovered===tpl.id
-                    ? `0 8px 24px rgba(74,48,104,0.25), 0 0 0 3px ${DEEP_PURPLE}`
-                    : "0 3px 12px rgba(74,48,104,0.12)",
-                  transition:"all 0.2s ease" }} />
-              <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, textAlign:"center" }}>{tpl.title}</div>
-              <div style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4 }}>{tpl.desc}</div>
-            </div>
-          ))}
-
-          {/* Blank canvas option */}
-          <div onClick={() => { setChosenTemplate(null); setStep(2); }}
-            style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, cursor:"pointer" }}
-            onMouseEnter={() => setHovered("blank")}
-            onMouseLeave={() => setHovered(null)}>
-            <div style={{ height: isMobile?120:150, width: isMobile?85:106, borderRadius:6,
-              border:`2px dashed ${PASTEL_PURPLE}50`, background:"white",
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8,
-              boxShadow: hovered==="blank" ? `0 8px 24px rgba(74,48,104,0.2), 0 0 0 3px ${DEEP_PURPLE}` : "0 3px 12px rgba(74,48,104,0.08)",
-              transition:"all 0.2s" }}>
-              <span style={{ fontSize:24, color:PASTEL_PURPLE }}>+</span>
-              <span style={{ fontSize:9, color:DARK_PURPLE, opacity:0.4, textAlign:"center" }}>{t("No cover","بدون غلاف")}</span>
-            </div>
-            <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE }}>{t("Blank","فارغ")}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Template Picker View ─────────────────────────────────────────────────────
 function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
   const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
   const [hovered, setHovered] = useState(null);
-  const [search, setSearch] = useState("");
 
   const occasionAr = {
     Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
@@ -1637,16 +1192,7 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
     Friendship:"صداقة",
   };
 
-  // When searching, show all matching templates across all occasions
-  const isSearching = search.trim().length > 0;
-  const searchResults = isSearching
-    ? TEMPLATE_LIBRARY.filter(tpl =>
-        tpl.title.toLowerCase().includes(search.toLowerCase()) ||
-        tpl.desc.toLowerCase().includes(search.toLowerCase()) ||
-        tpl.occasion.toLowerCase().includes(search.toLowerCase()))
-    : null;
-
-  const templates = isSearching ? searchResults : (TEMPLATE_BY_OCCASION[activeOccasion] || []);
+  const templates = TEMPLATE_BY_OCCASION[activeOccasion] || [];
 
   // Mini book preview for each template
   const MiniBook = ({ tpl, size = isMobile ? 130 : 160 }) => {
@@ -1734,39 +1280,9 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
           </p>
         </div>
 
-        {/* Search bar */}
-        <div style={{ position:"relative", marginBottom:24, maxWidth:480, margin:"0 auto 24px" }}>
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={t("Search templates... (e.g. Japan, Wedding, London)","ابحث عن قالب... (مثال: اليابان، زفاف، لندن)")}
-            style={{
-              width:"100%", padding:"12px 16px 12px 44px",
-              border:`1.5px solid ${search ? DEEP_PURPLE : PASTEL_PURPLE}40`,
-              borderRadius:14, fontSize:14, outline:"none",
-              fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif",
-              color:DARK_PURPLE, background:"white",
-              boxShadow: search ? `0 0 0 3px ${PASTEL_PURPLE}20` : "none",
-              transition:"all 0.2s ease",
-            }}
-          />
-          <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", opacity:0.4 }}>
-            <Icon name="image" size={16} color={DARK_PURPLE} />
-          </div>
-          {search && (
-            <button onClick={() => setSearch("")} style={{
-              position:"absolute", right:12, top:"50%", transform:"translateY(-50%)",
-              background:"none", border:"none", cursor:"pointer", fontSize:16,
-              color:DARK_PURPLE, opacity:0.4, lineHeight:1,
-            }}>✕</button>
-          )}
-        </div>
-
-        {/* Occasion tab bar — hidden while searching */}
-        {!isSearching && (
-          <div style={{ display:"flex", gap: isMobile ? 6 : 10, overflowX:"auto", paddingBottom:8,
-            marginBottom:32, justifyContent: isMobile ? "flex-start" : "center", flexWrap: isMobile ? "nowrap" : "wrap" }}>
+        {/* Occasion tab bar */}
+        <div style={{ display:"flex", gap: isMobile ? 6 : 10, overflowX:"auto", paddingBottom:8,
+          marginBottom:32, justifyContent: isMobile ? "flex-start" : "center", flexWrap: isMobile ? "nowrap" : "wrap" }}>
           {TEMPLATE_OCCASIONS.map(occ => (
             <button key={occ} onClick={() => setActiveOccasion(occ)} style={{
               padding: isMobile ? "8px 14px" : "10px 20px", borderRadius:24, fontSize: isMobile ? 12 : 13,
@@ -1778,17 +1294,7 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
               {t(occ, occasionAr[occ] || occ)}
             </button>
           ))}
-          </div>
-        )}
-
-        {/* Search result count */}
-        {isSearching && (
-          <div style={{ textAlign:"center", marginBottom:20, fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>
-            {searchResults.length > 0
-              ? t(`${searchResults.length} template${searchResults.length===1?"":"s"} found`, `${searchResults.length} قالب وُجد`)
-              : t("No templates found","لا توجد قوالب مطابقة")}
-          </div>
-        )}
+        </div>
 
         {/* Template grid */}
         <div style={{ display:"flex", gap: isMobile ? 16 : 24, flexWrap:"wrap", justifyContent:"center" }}>
