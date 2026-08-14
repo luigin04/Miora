@@ -2375,8 +2375,19 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
   const [payments,    setPayments]    = useState([]);
   const [loadingPays, setLoadingPays] = useState(true);
   const [filter,       setFilter]     = useState("pending"); // pending|approved|rejected|all
+  const [expandedId,   setExpandedId] = useState(null);   // currently expanded submission card
+  const [lightbox,     setLightbox]   = useState(null);   // proofImage src currently shown full-screen
+  const [copiedField,  setCopiedField]= useState(null);   // which field's "copied" tooltip is showing
 
   const isAdmin = authUser && authUser.email === ADMIN_EMAIL;
+
+  const copyToClipboard = (text, fieldKey) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopiedField(fieldKey);
+      setTimeout(() => setCopiedField(c => c === fieldKey ? null : c), 1500);
+    }).catch(() => {});
+  };
 
   useEffect(() => {
     if (!isAdmin) { setLoadingPays(false); return; }
@@ -2493,54 +2504,150 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
             <div style={{ fontSize:16, fontWeight:600, color:DARK_PURPLE }}>{t("No submissions here","لا توجد طلبات هنا")}</div>
           </div>
         ) : (
-          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-            {visiblePayments.map(pay => (
-              <div key={pay.id} style={{ background:"white", borderRadius:16, padding:20, border:`1px solid ${PASTEL_PURPLE}15`, display:"flex", gap:16, flexWrap:"wrap" }}>
-                {pay.proofImage ? (
-                  <img src={pay.proofImage} alt="proof" style={{ width:140, height:140, objectFit:"cover", borderRadius:12, flexShrink:0, cursor:"pointer" }}
-                    onClick={() => window.open(pay.proofImage, "_blank")} />
-                ) : (
-                  <div style={{ width:140, height:140, borderRadius:12, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><Icon name="image" size={32} color={PASTEL_PURPLE} /></div>
-                )}
-                <div style={{ flex:1, minWidth:200 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, flexWrap:"wrap", gap:8 }}>
-                    <div style={{ fontWeight:700, fontSize:16, color:DARK_PURPLE }}>{pay.package?.pages||"—"} {t("pages","صفحة")} — {pay.package?.price||"—"}</div>
-                    <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background:statusColors[pay.status]||GOLD_ACCENT }}>
-                      {statusLabel(pay.status)}
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {visiblePayments.map(pay => {
+              const isOpen = expandedId === pay.id;
+              return (
+              <div key={pay.id} style={{ background:"white", borderRadius:16, border:`1px solid ${PASTEL_PURPLE}${isOpen?"40":"15"}`, boxShadow: isOpen ? `0 8px 28px ${PASTEL_PURPLE}20` : "none", transition:"box-shadow 0.2s, border-color 0.2s", overflow:"hidden" }}>
+
+                {/* ── Collapsed header row — click anywhere to expand/collapse ── */}
+                <div onClick={() => setExpandedId(isOpen ? null : pay.id)}
+                  style={{ display:"flex", gap:14, alignItems:"center", padding:16, cursor:"pointer" }}>
+                  {pay.proofImage ? (
+                    <img src={pay.proofImage} alt="proof" style={{ width:56, height:56, objectFit:"cover", borderRadius:10, flexShrink:0 }} />
+                  ) : (
+                    <div style={{ width:56, height:56, borderRadius:10, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><Icon name="image" size={20} color={PASTEL_PURPLE} /></div>
+                  )}
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                      <div style={{ fontWeight:700, fontSize:15, color:DARK_PURPLE, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                        {pay.customerName || pay.customerEmail || t("Guest","زائر")}
+                      </div>
+                      <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background:statusColors[pay.status]||GOLD_ACCENT, flexShrink:0 }}>
+                        {statusLabel(pay.status)}
+                      </div>
+                    </div>
+                    <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.55, marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                      {pay.package?.pages||"—"} {t("pages","صفحة")} — {pay.package?.price||"—"} · {fmt(pay.createdAt)}
                     </div>
                   </div>
-                  <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5, marginBottom:14 }}>
-                    {t("Submitted","أُرسل")}: {fmt(pay.createdAt)}
-                    {pay.customerName && <span> · {pay.customerName}</span>}
-                    {pay.customerEmail && <span style={{ opacity:0.6 }}> ({pay.customerEmail})</span>}
-                  </div>
-                  <div style={{ display:"flex", gap:8 }}>
-                    <button onClick={() => setStatus(pay.id, "approved")} disabled={pay.status==="approved"} style={{
-                      flex:1, padding:"10px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
-                      background: pay.status==="approved" ? "#d4f4dd" : "#27ae60",
-                      color: pay.status==="approved" ? "#27ae60" : "white",
-                      cursor: pay.status==="approved" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
-                      ✓ {t("Approve","موافقة")}
-                    </button>
-                    <button onClick={() => setStatus(pay.id, "rejected")} disabled={pay.status==="rejected"} style={{
-                      flex:1, padding:"10px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
-                      background: pay.status==="rejected" ? "#fbd9d6" : "#e74c3c",
-                      color: pay.status==="rejected" ? "#e74c3c" : "white",
-                      cursor: pay.status==="rejected" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
-                      ✕ {t("Reject","رفض")}
-                    </button>
-                    {pay.status !== "pending" && (
-                      <button onClick={() => setStatus(pay.id, "pending")} style={{
-                        padding:"10px 14px", borderRadius:10, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:13, fontWeight:600,
-                        background:"white", color:DARK_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
-                        ↺
-                      </button>
-                    )}
+                  <div style={{ flexShrink:0, transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition:"transform 0.2s", opacity:0.4 }}>
+                    <Icon name="arrowdown" size={18} color={DARK_PURPLE} />
                   </div>
                 </div>
+
+                {/* ── Expanded detail panel ── */}
+                {isOpen && (
+                  <div style={{ padding:"0 20px 20px 20px", borderTop:`1px solid ${PASTEL_PURPLE}12` }}>
+                    <div style={{ display:"flex", gap:20, flexWrap:"wrap", paddingTop:18 }}>
+
+                      {/* Large expandable proof image */}
+                      <div style={{ flexShrink:0 }}>
+                        {pay.proofImage ? (
+                          <img src={pay.proofImage} alt="proof"
+                            onClick={(e) => { e.stopPropagation(); setLightbox(pay.proofImage); }}
+                            style={{ width:180, height:180, objectFit:"cover", borderRadius:14, cursor:"zoom-in", border:`1px solid ${PASTEL_PURPLE}20` }} />
+                        ) : (
+                          <div style={{ width:180, height:180, borderRadius:14, background:`${PASTEL_PURPLE}10`, display:"flex", alignItems:"center", justifyContent:"center" }}><Icon name="image" size={32} color={PASTEL_PURPLE} /></div>
+                        )}
+                        {pay.proofImage && (
+                          <div onClick={(e) => { e.stopPropagation(); setLightbox(pay.proofImage); }}
+                            style={{ textAlign:"center", fontSize:11, color:PASTEL_PURPLE, marginTop:6, cursor:"pointer", fontWeight:600 }}>
+                            🔍 {t("View full size","عرض بالحجم الكامل")}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Detail fields */}
+                      <div style={{ flex:1, minWidth:220, display:"flex", flexDirection:"column", gap:10 }}>
+                        <DetailRow label={t("Order ID","رقم الطلب")} value={pay.id} mono copyKey="id" copiedField={copiedField} onCopy={copyToClipboard} />
+                        <DetailRow label={t("Customer name","اسم العميل")} value={pay.customerName || t("Not provided","غير متوفر")} />
+                        <DetailRow label={t("Email","البريد الإلكتروني")} value={pay.customerEmail} link={pay.customerEmail ? `mailto:${pay.customerEmail}` : null} copyKey="email" copiedField={copiedField} onCopy={copyToClipboard} />
+                        <DetailRow label={t("Customer UID","معرّف العميل")} value={pay.customerUid} mono copyKey="uid" copiedField={copiedField} onCopy={copyToClipboard} />
+                        <DetailRow label={t("Package","الباقة")} value={`${pay.package?.pages||"—"} ${t("pages","صفحة")} — ${pay.package?.price||"—"}`} />
+                        <DetailRow label={t("Submitted","أُرسل")} value={fmt(pay.createdAt)} />
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div style={{ display:"flex", gap:8, marginTop:18 }}>
+                      <button onClick={() => setStatus(pay.id, "approved")} disabled={pay.status==="approved"} style={{
+                        flex:1, padding:"11px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
+                        background: pay.status==="approved" ? "#d4f4dd" : "#27ae60",
+                        color: pay.status==="approved" ? "#27ae60" : "white",
+                        cursor: pay.status==="approved" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                        ✓ {t("Approve","موافقة")}
+                      </button>
+                      <button onClick={() => setStatus(pay.id, "rejected")} disabled={pay.status==="rejected"} style={{
+                        flex:1, padding:"11px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
+                        background: pay.status==="rejected" ? "#fbd9d6" : "#e74c3c",
+                        color: pay.status==="rejected" ? "#e74c3c" : "white",
+                        cursor: pay.status==="rejected" ? "default" : "pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                        ✕ {t("Reject","رفض")}
+                      </button>
+                      {pay.status !== "pending" && (
+                        <button onClick={() => setStatus(pay.id, "pending")} style={{
+                          padding:"11px 16px", borderRadius:10, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:13, fontWeight:600,
+                          background:"white", color:DARK_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                          ↺ {t("Reset","إعادة تعيين")}
+                        </button>
+                      )}
+                      {pay.customerEmail && (
+                        <a href={`mailto:${pay.customerEmail}`} onClick={e=>e.stopPropagation()} style={{
+                          padding:"11px 16px", borderRadius:10, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:13, fontWeight:600,
+                          background:"white", color:DARK_PURPLE, textDecoration:"none", fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center" }}>
+                          ✉️
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
+            );})}
           </div>
+        )}
+      </div>
+
+      {/* ── Full-screen image lightbox ── */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{
+          position:"fixed", inset:0, background:"rgba(20,10,25,0.88)", zIndex:9999,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:24, cursor:"zoom-out" }}>
+          <img src={lightbox} alt="proof full size" onClick={e=>e.stopPropagation()}
+            style={{ maxWidth:"92vw", maxHeight:"88vh", borderRadius:12, boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }} />
+          <button onClick={() => setLightbox(null)} style={{
+            position:"absolute", top:20, right:20, width:40, height:40, borderRadius:"50%", border:"none",
+            background:"rgba(255,255,255,0.15)", color:"white", fontSize:20, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+            ✕
+          </button>
+          <a href={lightbox} download onClick={e=>e.stopPropagation()} style={{
+            position:"absolute", top:20, right:70, height:40, padding:"0 16px", borderRadius:20, border:"none",
+            background:"rgba(255,255,255,0.15)", color:"white", fontSize:13, fontWeight:600, cursor:"pointer",
+            fontFamily:"'Quicksand',sans-serif", textDecoration:"none", display:"flex", alignItems:"center" }}>
+            ⬇ {t("Download","تنزيل")}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Small labeled field used inside the expanded admin submission card ─────
+function DetailRow({ label, value, mono, link, copyKey, copiedField, onCopy }) {
+  const display = value || "—";
+  return (
+    <div>
+      <div style={{ fontSize:10, fontWeight:700, letterSpacing:0.5, textTransform:"uppercase", color:DARK_PURPLE, opacity:0.4, marginBottom:2 }}>{label}</div>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        {link ? (
+          <a href={link} onClick={e=>e.stopPropagation()} style={{ fontSize:13, color:PASTEL_PURPLE, fontWeight:600, textDecoration:"none", wordBreak:"break-all" }}>{display}</a>
+        ) : (
+          <span style={{ fontSize:13, color:DARK_PURPLE, fontFamily: mono ? "monospace" : "inherit", wordBreak:"break-all" }}>{display}</span>
+        )}
+        {copyKey && value && (
+          <span onClick={(e) => { e.stopPropagation(); onCopy(value, copyKey); }} style={{ fontSize:11, color:PASTEL_PURPLE, cursor:"pointer", flexShrink:0, opacity:0.7 }}>
+            {copiedField === copyKey ? "✓" : "⧉"}
+          </span>
         )}
       </div>
     </div>
