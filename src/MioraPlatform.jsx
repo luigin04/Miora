@@ -1237,6 +1237,22 @@ const TEMPLATE_LIBRARY = [
 
   // ── TRAVEL — Belgium ─────────────────────────────────────────────────────
   { id:"tpl-bel1", occasion:"Travel", title:"Belgium",   desc:"Chocolate Bar",      coverImg:"/books/book-belgium_chocolate.jpg", pages:[...makeCoverPages("#e07868","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bel2", occasion:"Travel", title:"Belgium",   desc:"Heart Waffles",      coverImg:"/books/book-belgium_waffle_heart.jpg", pages:[...makeCoverPages("#6b5138","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bel3", occasion:"Travel", title:"Belgium",   desc:"Waffle Stack Syrup", coverImg:"/books/book-belgium_waffle_syrup.jpg", pages:[...makeCoverPages("#f5c0d8","#fff"), ...makeBlankPages(14)] },
+
+  // ── ANNIVERSARY — Us, Always ────────────────────────────────────────────
+  { id:"tpl-ann2", occasion:"Anniversary", title:"Us, Always", desc:"Polaroid Heart Outline", coverImg:"/books/book-us_always_polaroid.jpg", pages:[...makeCoverPages("#c8ccf0","#fff"), ...makeBlankPages(14)] },
+
+  // ── FRIENDSHIP — New ─────────────────────────────────────────────────────
+  { id:"tpl-fr2", occasion:"Friendship", title:"Years of Friendship",    desc:"Tulip Gift Box",     coverImg:"/books/book-years_friendship_tulips.jpg", pages:[...makeCoverPages("#d888a0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fr3", occasion:"Friendship", title:"BFFs",                   desc:"Floral Box Outline", coverImg:"/books/book-bffs_floral_box.jpg",         pages:[...makeCoverPages("#d8d0f8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fr4", occasion:"Friendship", title:"My BFFs",                desc:"Watering Can Florals",coverImg:"/books/book-mybffs_wateringcan.jpg",     pages:[...makeCoverPages("#faf0e8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fr5", occasion:"Friendship", title:"Bestfriends Forever",    desc:"Floral Paper Bag",   coverImg:"/books/book-bestfriends_forever_bag.jpg", pages:[...makeCoverPages("#f8d0e8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fr6", occasion:"Friendship", title:"Bestfriends Forever",    desc:"Pink Lily",          coverImg:"/books/book-bestfriends_forever_lily.jpg",pages:[...makeCoverPages("#fce0ec","#fff"), ...makeBlankPages(14)] },
+
+  // ── WEDDING — New ────────────────────────────────────────────────────────
+  { id:"tpl-w2", occasion:"Wedding", title:"Forever Starts Here", desc:"Just Married Car",  coverImg:"/books/book-forever_starts_here_car.jpg", pages:[...makeCoverPages("#ded3bf","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-w3", occasion:"Wedding", title:"Our Wedding",         desc:"Interlocking Rings", coverImg:"/books/book-our_wedding_rings.jpg",       pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
 
   // ── Existing SVG-based templates ──────────────────────────────────────────
   { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
