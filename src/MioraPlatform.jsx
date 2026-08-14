@@ -1137,15 +1137,15 @@ const TEMPLATE_LIBRARY = [
   // ── FRIENDSHIP ───────────────────────────────────────────────────────────
   { id:"tpl-bff1",     occasion:"Friendship", title:"Best Friends Forever", desc:"Heart Polaroid",      coverImg:"/books/book-best_friends.png",        pages:[...makeCoverPages("#f8f0e8","#fff"), ...makeBlankPages(14)] },
 
-  // ── WEDDING — Japan Honeymoon ─────────────────────────────────────────────
-  { id:"tpl-honey1",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Lantern & Blossoms",   coverImg:"/books/book-japan_lantern_honey.png", pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-honey2",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Flower",coverImg:"/books/book-japan_flower_honey.png",  pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-honey3",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",coverImg:"/books/book-japan_branch_honey.png",  pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-honey4",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Japanese Fan",         coverImg:"/books/book-japan_fan_honey.png",     pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Japan Honeymoon ─────────────────────────────────────────────
+  { id:"tpl-honey1",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Lantern & Blossoms",   coverImg:"/books/book-japan_lantern_honey.png", pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey2",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Cherry Blossom Flower",coverImg:"/books/book-japan_flower_honey.png",  pages:[...makeCoverPages("#f4a8c0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey3",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",coverImg:"/books/book-japan_branch_honey.png",  pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey4",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Japanese Fan",         coverImg:"/books/book-japan_fan_honey.png",     pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
 
-  // ── WEDDING — Japan Honeymoon (new) ─────────────────────────────────────
-  { id:"tpl-honey5",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",  coverImg:"/books/book-japan_branch_honey2.jpg",   pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
-  { id:"tpl-honey6",   occasion:"Wedding",    title:"Japan Honeymoon",     desc:"Japanese Fan Pink",      coverImg:"/books/book-japan_fan_honey2.jpg",      pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
+  // ── TRAVEL — Japan Honeymoon (new) ─────────────────────────────────────
+  { id:"tpl-honey5",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Cherry Blossom Branch",  coverImg:"/books/book-japan_branch_honey2.jpg",   pages:[...makeCoverPages("#fce8f0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-honey6",   occasion:"Travel",    title:"Japan Honeymoon",     desc:"Japanese Fan Pink",      coverImg:"/books/book-japan_fan_honey2.jpg",      pages:[...makeCoverPages("#c8788a","#fff"), ...makeBlankPages(14)] },
 
   // ── TRAVEL — Japan (new) ─────────────────────────────────────────────────
   { id:"tpl-jp4",      occasion:"Travel",     title:"Japan 2025",          desc:"Pink Lantern Alt",       coverImg:"/books/book-japan_lantern_2025b.jpg",   pages:[...makeCoverPages("#f4a0b0","#fff"), ...makeBlankPages(14)] },
@@ -1215,6 +1215,28 @@ const TEMPLATE_LIBRARY = [
 
   // ── TRAVEL — Cappadocia ───────────────────────────────────────────────────
   { id:"tpl-cap1",  occasion:"Travel", title:"Cappadocia Turkey",  desc:"Hot Air Balloon",      coverImg:"/books/book-cappadocia_turkey.jpg",   pages:[...makeCoverPages("#f5e8d8","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — Spain ──────────────────────────────────────────────────────
+  { id:"tpl-esp1", occasion:"Travel", title:"Spain",     desc:"Hand Fan Red",       coverImg:"/books/book-spain_fan.jpg",         pages:[...makeCoverPages("#e0f5f5","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-esp2", occasion:"Travel", title:"Spain",     desc:"Pomegranate Pink",   coverImg:"/books/book-spain_pomegranate.jpg", pages:[...makeCoverPages("#f8d8e0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-esp3", occasion:"Travel", title:"Spain",     desc:"Arc de Triomf",      coverImg:"/books/book-spain_arc.jpg",         pages:[...makeCoverPages("#f8f0e0","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — Bali ────────────────────────────────────────────────────────
+  { id:"tpl-bali1", occasion:"Travel", title:"Bali Indonesia", desc:"Frangipani Flower", coverImg:"/books/book-bali_frangipani.jpg", pages:[...makeCoverPages("#f0d8f8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bali2", occasion:"Travel", title:"Bali Indonesia", desc:"Ocean Wave",        coverImg:"/books/book-bali_wave.jpg",        pages:[...makeCoverPages("#e8f0f8","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-bali3", occasion:"Travel", title:"Bali Indonesia", desc:"Surfboards 2026",   coverImg:"/books/book-bali_surfboards.jpg",  pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — New York ────────────────────────────────────────────────────
+  { id:"tpl-nyc1", occasion:"Travel", title:"New York",  desc:"Statue of Liberty",  coverImg:"/books/book-newyork_liberty.jpg",  pages:[...makeCoverPages("#f0a8d8","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — Montreal ────────────────────────────────────────────────────
+  { id:"tpl-mtl1", occasion:"Travel", title:"Montreal 2024", desc:"City Skyline",    coverImg:"/books/book-montreal_skyline.jpg", pages:[...makeCoverPages("#a8bcc8","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — Bangkok ─────────────────────────────────────────────────────
+  { id:"tpl-bkk1", occasion:"Travel", title:"Bangkok",   desc:"Tuk Tuk Taxi",       coverImg:"/books/book-bangkok_tuktuk.jpg",   pages:[...makeCoverPages("#f8f0a8","#fff"), ...makeBlankPages(14)] },
+
+  // ── TRAVEL — Belgium ─────────────────────────────────────────────────────
+  { id:"tpl-bel1", occasion:"Travel", title:"Belgium",   desc:"Chocolate Bar",      coverImg:"/books/book-belgium_chocolate.jpg", pages:[...makeCoverPages("#e07868","#fff"), ...makeBlankPages(14)] },
 
   // ── Existing SVG-based templates ──────────────────────────────────────────
   { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
