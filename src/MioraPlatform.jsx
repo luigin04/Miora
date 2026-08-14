@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
 import { auth, db, ADMIN_EMAIL, signInWithGoogle, handleGoogleRedirectResult } from "./firebase";
 import {
-  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy,
+  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy, setDoc, getDocs,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import jsPDF from "jspdf";
@@ -155,7 +155,57 @@ function compressImageFile(file, maxWidth = 900, quality = 0.7) {
   });
 }
 
-// ─── PDF Export ───────────────────────────────────────────────────────────────
+// Recompress an existing data-URL (used for book page images already in the editor)
+// down to a given max width / quality, returned as a new JPEG data URL.
+function compressDataUrl(dataUrl, maxWidth = 1400, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:")) { resolve(dataUrl); return; }
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => reject(new Error("Image failed to load for compression"));
+    img.src = dataUrl;
+  });
+}
+
+// Serialize a finished album's pages to Firestore, one document per page (under
+// payments/{paymentId}/pages/{index}), so the admin can later fetch the full design
+// and generate a print-quality PDF without needing paid Firebase Storage.
+// Best-effort per page: if an individual page is too large even after compression,
+// it's skipped (logged) rather than blocking the whole submission.
+async function savePagesToFirestore(paymentId, pages) {
+  const results = await Promise.allSettled((pages || []).map(async (pg, index) => {
+    const compressedElements = await Promise.all((pg.elements || []).map(async el => {
+      if (el.type === "image" && el.src) {
+        try {
+          const src = await compressDataUrl(el.src, 1400, 0.85);
+          return { ...el, src };
+        } catch {
+          return el; // fall back to original if compression fails
+        }
+      }
+      return el;
+    }));
+    const pageDoc = { index, background: pg.background || "#ffffff", elements: compressedElements };
+    await setDoc(doc(db, "payments", paymentId, "pages", String(index)), pageDoc);
+  }));
+  const failed = results.filter(r => r.status === "rejected").length;
+  if (failed > 0) console.warn(`${failed} page(s) failed to save to Firestore (likely too large).`);
+  return { total: (pages||[]).length, failed };
+}
+
+
 // Renders each album page div to canvas via html2canvas, then packs them all
 // into a single jsPDF document at print-quality resolution (scale: 2).
 // Returns the jsPDF instance so the caller can save() or open it.
@@ -229,6 +279,7 @@ export default function MioraPlatform() {
   const [lang,            setLang]            = useState(() => loadFromStorage(STORAGE_KEYS.LANG,     "en"));
   const [currentView,     setCurrentView]     = useState(() => window.location.hash === "#admin" ? "admin" : "home");
   const [selectedPackage, setSelectedPackage] = useState(null);
+  const [pendingProject,  setPendingProject]  = useState(null); // { pages, title, occasion } captured when customer finishes editing, sent to Firestore on payment submit
   const [reviewForm,      setReviewForm]      = useState({ name:"", rating:5, text:"" });
   const [reviews,         setReviews]         = useState(DEFAULT_REVIEWS); // seeded with defaults, overwritten by Firestore
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -377,9 +428,11 @@ export default function MioraPlatform() {
 
     const handleEditorDone = (updatedPages) => {
       // Count pages, detect tier, set package, go to payment
-      const pageCount = (updatedPages || project.pages || []).length;
+      const finalPages = updatedPages || project.pages || [];
+      const pageCount = finalPages.length;
       const pkg = getPackageFromPageCount(pageCount);
       setSelectedPackage(pkg);
+      setPendingProject({ pages: finalPages, title: project.title || "", occasion: project.occasion || "General" });
       setCurrentView("payment");
     };
 
@@ -391,7 +444,7 @@ export default function MioraPlatform() {
   }
 
   if (currentView === "payment") {
-    return <PaymentView selectedPackage={selectedPackage} authUser={authUser}
+    return <PaymentView selectedPackage={selectedPackage} authUser={authUser} pendingProject={pendingProject}
       onBack={() => setCurrentView("home")}
       t={t} lang={lang} isRTL={isRTL} />;
   }
@@ -2219,7 +2272,7 @@ function MyOrdersView({ authUser, onBack, t, lang, isRTL }) {
 }
 
 // ─── Payment View (writes directly to Firestore, no Storage needed) ──────────
-function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
+function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lang, isRTL }) {
   const fileRef = useRef(null);
   const [file,      setFile]      = useState(null);
   const [preview,   setPreview]   = useState(null);
@@ -2248,7 +2301,7 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
       // Compress the screenshot so it fits inside a Firestore document (no paid Storage needed)
       const compressed = await compressImageFile(file, 900, 0.7);
 
-      await addDoc(collection(db, "payments"), {
+      const docRef = await addDoc(collection(db, "payments"), {
         customerUid: authUser.uid,
         customerName: authUser.displayName || null,
         customerEmail: authUser.email || null,
@@ -2257,6 +2310,21 @@ function PaymentView({ selectedPackage, authUser, onBack, t, lang, isRTL }) {
         proofImage: compressed,
         createdAt: new Date().toISOString(),
       });
+
+      // Best-effort: send the actual book design (pages/images/text) to Firestore too,
+      // linked by this payment's own ID, so the admin can generate a print PDF once approved.
+      if (pendingProject?.pages?.length) {
+        try {
+          await setDoc(doc(db, "payments", docRef.id), {
+            projectTitle: pendingProject.title || null,
+            projectOccasion: pendingProject.occasion || null,
+            pageCount: pendingProject.pages.length,
+          }, { merge: true });
+          await savePagesToFirestore(docRef.id, pendingProject.pages);
+        } catch (pagesErr) {
+          console.warn("Saving project pages failed (non-blocking):", pagesErr);
+        }
+      }
 
       // Best-effort instant email heads-up to Layal (no attachment — she reviews in the admin panel)
       try {
@@ -2378,6 +2446,10 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
   const [expandedId,   setExpandedId] = useState(null);   // currently expanded submission card
   const [lightbox,     setLightbox]   = useState(null);   // proofImage src currently shown full-screen
   const [copiedField,  setCopiedField]= useState(null);   // which field's "copied" tooltip is showing
+  const [pdfPages,      setPdfPages]      = useState(null); // pages currently loaded into the hidden off-screen renderer
+  const [generatingId,  setGeneratingId]  = useState(null); // payment id currently being turned into a PDF
+  const [pdfError,      setPdfError]      = useState(null);
+  const pdfPageRefs = useRef([]); // DOM refs for the hidden off-screen pages, used by html2canvas
 
   const isAdmin = authUser && authUser.email === ADMIN_EMAIL;
 
@@ -2387,6 +2459,45 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
       setCopiedField(fieldKey);
       setTimeout(() => setCopiedField(c => c === fieldKey ? null : c), 1500);
     }).catch(() => {});
+  };
+
+  // Fetch this order's saved pages from Firestore, render them off-screen, then
+  // rasterize + pack into a print-quality PDF for the print supplier.
+  const handleGeneratePDF = async (pay) => {
+    setPdfError(null);
+    setGeneratingId(pay.id);
+    try {
+      const snap = await getDocs(collection(db, "payments", pay.id, "pages"));
+      if (snap.empty) {
+        setPdfError(t(
+          "No saved design found for this order (it may predate PDF generation support).",
+          "لا يوجد تصميم محفوظ لهذا الطلب (قد يكون قبل دعم إنشاء PDF)."
+        ));
+        setGeneratingId(null);
+        return;
+      }
+      const fetchedPages = snap.docs
+        .map(d => d.data())
+        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+      pdfPageRefs.current = [];
+      setPdfPages(fetchedPages);
+
+      // Wait for the hidden pages to mount + images to decode before rasterizing.
+      await new Promise(res => setTimeout(res, 400));
+      const refs = pdfPageRefs.current.filter(Boolean);
+      if (refs.length === 0) throw new Error("Hidden page refs did not mount");
+
+      const title = pay.projectTitle || `Order-${pay.id.slice(0, 8)}`;
+      const pdf = await exportAlbumToPDF(refs, title);
+      pdf.save(`${title.replace(/\s+/g, "-")}-print.pdf`);
+    } catch (err) {
+      console.error("Admin PDF generation failed:", err);
+      setPdfError(t("PDF generation failed. Please try again.","فشل إنشاء PDF. يرجى المحاولة مرة أخرى."));
+    } finally {
+      setGeneratingId(null);
+      setPdfPages(null);
+    }
   };
 
   useEffect(() => {
@@ -2570,7 +2681,7 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                     </div>
 
                     {/* Action buttons */}
-                    <div style={{ display:"flex", gap:8, marginTop:18 }}>
+                    <div style={{ display:"flex", gap:8, marginTop:18, flexWrap:"wrap" }}>
                       <button onClick={() => setStatus(pay.id, "approved")} disabled={pay.status==="approved"} style={{
                         flex:1, padding:"11px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
                         background: pay.status==="approved" ? "#d4f4dd" : "#27ae60",
@@ -2600,6 +2711,25 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                         </a>
                       )}
                     </div>
+
+                    {/* Print-ready PDF — only available once the order is approved */}
+                    {pay.status === "approved" && (
+                      <div style={{ marginTop:10 }}>
+                        <button onClick={(e) => { e.stopPropagation(); handleGeneratePDF(pay); }}
+                          disabled={generatingId === pay.id}
+                          style={{
+                            width:"100%", padding:"12px", borderRadius:10, border:"none", fontSize:13, fontWeight:700,
+                            background: generatingId === pay.id ? "#ccc" : `linear-gradient(135deg,${DEEP_PURPLE},${DARK_PURPLE})`,
+                            color:"white", cursor: generatingId === pay.id ? "not-allowed" : "pointer",
+                            fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+                          <Icon name="pdf" size={16} color="white" />
+                          {generatingId === pay.id ? t("Generating print PDF...","جاري إنشاء PDF للطباعة...") : t("Generate Print-Ready PDF","إنشاء PDF جاهز للطباعة")}
+                        </button>
+                        {pdfError && generatingId === null && (
+                          <div style={{ fontSize:12, color:"#e74c3c", marginTop:8, textAlign:"center" }}>{pdfError}</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -2607,6 +2737,24 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
           </div>
         )}
       </div>
+
+      {/* ── Hidden off-screen pages, rasterized into the print PDF via html2canvas ── */}
+      {pdfPages && (
+        <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
+          {pdfPages.map((pg, i) => (
+            <div key={i} ref={el => { pdfPageRefs.current[i] = el; }}
+              style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
+              {(pg.elements||[]).map((el, ei) => (
+                <div key={el.id||ei} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h, transform:`rotate(${el.rotation||0}deg)` }}>
+                  {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
+                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>}
+                  {el.type==="text" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18, color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal", textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>{el.content}</div>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Full-screen image lightbox ── */}
       {lightbox && (
@@ -2671,9 +2819,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const [lastSaved,   setLastSaved]   = useState(null);
   const [dragging,    setDragging]    = useState(null);   // { elId, startX, startY, origX, origY }
   const [resizing,    setResizing]    = useState(null);
-  const [exporting,   setExporting]   = useState(false);  // PDF export in progress
-  const [exported,    setExported]    = useState(false);  // PDF just downloaded
-  const pageExportRefs = useRef([]);  // array of DOM refs for each page, used by html2canvas
 
   // Mobile-specific state
   const [mobilePanel, setMobilePanel] = useState(null); // null | "stickers" | "fonts" | "pages" | "backgrounds"
@@ -2720,32 +2865,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
     onUpdate({ pages, title, occasion });
     setLastSaved(new Date());
   };
-
-  const handleExportPDF = async () => {
-    setExporting(true);
-    setExported(false);
-    try {
-      const refs = pageExportRefs.current.filter(Boolean);
-      if (refs.length === 0) throw new Error("No page refs found");
-      const pdf = await exportAlbumToPDF(refs, title || "Miora Album");
-      const fileName = `${(title || "Miora-Album").replace(/\s+/g,"-")}-${Date.now()}.pdf`;
-      pdf.save(fileName);
-      setExported(true);
-    } catch (err) {
-      console.error("PDF export failed:", err);
-      alert(t("PDF export failed. Please try again.","فشل تصدير PDF. يرجى المحاولة مرة أخرى."));
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const whatsappPDFMessage = encodeURIComponent(
-    t(
-      `Hi Layal! I've finished designing my album "${title || "My Album"}" (${pages.length} pages). I'm attaching the PDF below for printing. Please confirm receipt! 💜`,
-      `مرحباً ليال! لقد انتهيت من تصميم ألبومي "${title || "ألبومي"}" (${pages.length} صفحة). أرفق ملف PDF أدناه للطباعة. يرجى تأكيد الاستلام! 💜`
-    )
-  );
-  const whatsappPDFLink = `https://wa.me/${LAYAL_WHATSAPP_NUMBER}?text=${whatsappPDFMessage}`;
 
   const fmtTime = d => d ? d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
 
@@ -3176,12 +3295,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{t("Font","خط")}</span>
           </button>
 
-          {/* PDF */}
-          <button onClick={handleExportPDF} disabled={exporting} style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3,
-            flex:1, border:"none", background:"transparent", cursor:exporting?"not-allowed":"pointer", padding:"4px 0", opacity:exporting?0.5:1 }}>
-            <Icon name="pdf" size={22} color={DEEP_PURPLE} />
-            <span style={{ fontSize:9, color:DEEP_PURPLE, opacity:0.6, letterSpacing:0.5 }}>{exporting?t("...","..."):"PDF"}</span>
-          </button>
         </div>
 
         {/* Slide-up panel overlay */}
@@ -3272,35 +3385,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           </div>
         )}
 
-        {/* Hidden pages for PDF export */}
-        <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
-          {pages.map((pg, i) => (
-            <div key={pg.id} ref={el => { pageExportRefs.current[i] = el; }}
-              style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
-              {(pg.elements||[]).map(el => (
-                <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h, transform:`rotate(${el.rotation||0}deg)` }}>
-                  {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
-                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>}
-                  {el.type==="text" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18, color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal", textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>{el.content}</div>}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        {exported && (
-          <div style={{ position:"fixed", top:70, left:16, right:16, zIndex:80,
-            background:"#27ae60", color:"white", borderRadius:14, padding:"12px 16px",
-            display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
-            <span style={{ fontSize:13, fontWeight:600 }}>✅ {t("PDF downloaded!","تم تنزيل PDF!")}</span>
-            <a href={whatsappPDFLink} target="_blank" rel="noopener noreferrer"
-              style={{ background:"white", color:"#27ae60", padding:"6px 12px", borderRadius:10,
-                fontSize:11, fontWeight:700, textDecoration:"none" }}>
-              💬 {t("Send","أرسل")}
-            </a>
-          </div>
-        )}
-
         <style>{`
           @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
           @keyframes overlayIn{from{opacity:0}to{opacity:1}}
@@ -3339,13 +3423,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700, color:DEEP_PURPLE, cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
             display:"flex", alignItems:"center", gap:6 }}>
             <Icon name="save" size={14} color={DEEP_PURPLE} /> {t("Save","احفظ")}
-          </button>
-          <button onClick={handleExportPDF} disabled={exporting} style={{
-            background: exporting ? "#ccc" : `linear-gradient(135deg,${DEEP_PURPLE},${DARK_PURPLE})`,
-            border:"none", borderRadius:10, padding:"6px 14px", fontSize:12, fontWeight:700,
-            color:"white", cursor:exporting?"not-allowed":"pointer", fontFamily:"'Quicksand',sans-serif",
-            display:"flex", alignItems:"center", gap:6 }}>
-            <Icon name="pdf" size={14} color="white" /> {exporting ? t("Exporting...","جاري التصدير...") : t("Export PDF","تصدير PDF")}
           </button>
           <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
             background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
@@ -3575,20 +3652,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             </div>
           )}
 
-          {exported && (
-            <div style={{ width:"100%", background:"linear-gradient(90deg,#27ae60,#1e8449)", color:"white", padding:"12px 20px", display:"flex", alignItems:"center", justifyContent:"center", gap:16, flexWrap:"wrap" }}>
-              <span style={{ fontSize:13, fontWeight:600 }}>
-                ✅ {t("PDF downloaded! Now send it to Layal for printing.","تم تنزيل PDF! أرسله الآن إلى ليال للطباعة.")}
-              </span>
-              <a href={whatsappPDFLink} target="_blank" rel="noopener noreferrer" style={{
-                background:"white", color:"#27ae60", padding:"6px 14px", borderRadius:20, fontSize:12,
-                fontWeight:700, textDecoration:"none", display:"flex", alignItems:"center", gap:4 }}>
-                💬 {t("Send to Layal via WhatsApp","أرسل إلى ليال عبر واتساب")}
-              </a>
-              <button onClick={() => setExported(false)} style={{ background:"rgba(255,255,255,0.2)", border:"none", borderRadius:6, padding:"2px 10px", color:"white", cursor:"pointer", fontSize:11 }}>✕</button>
-            </div>
-          )}
-
           {/* Canvas — Two-page spread view */}
           <div style={{ padding:"32px 24px", display:"flex", justifyContent:"center", alignItems:"flex-start" }}>
             <div style={{ display:"flex", alignItems:"stretch", gap:0,
@@ -3754,35 +3817,6 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             </button>
           </div>
 
-          {/* ── Hidden off-screen pages for PDF export (html2canvas captures these) ── */}
-          <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
-            {pages.map((pg, i) => (
-              <div key={pg.id} ref={el => { pageExportRefs.current[i] = el; }}
-                style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
-                {(pg.elements||[]).map(el => (
-                  <div key={el.id} style={{
-                    position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
-                    transform:`rotate(${el.rotation||0}deg)` }}>
-                    {el.type==="image" && (
-                      <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />
-                    )}
-                    {el.type==="sticker" && (
-                      <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                        fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>
-                    )}
-                    {el.type==="text" && (
-                      <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                        fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                        color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                        textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>
-                        {el.content}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* ── Right panel: properties ── */}
