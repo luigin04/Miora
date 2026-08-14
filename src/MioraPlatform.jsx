@@ -1253,6 +1253,29 @@ const TEMPLATE_LIBRARY = [
   // ── WEDDING — New ────────────────────────────────────────────────────────
   { id:"tpl-w2", occasion:"Wedding", title:"Forever Starts Here", desc:"Just Married Car",  coverImg:"/books/book-forever_starts_here_car.jpg", pages:[...makeCoverPages("#ded3bf","#fff"), ...makeBlankPages(14)] },
   { id:"tpl-w3", occasion:"Wedding", title:"Our Wedding",         desc:"Interlocking Rings", coverImg:"/books/book-our_wedding_rings.jpg",       pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-w4", occasion:"Wedding", title:"Wedding Day",         desc:"Bride & Car Line Art", coverImg:"/books/book-weddingday_car_lineart.jpg", pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-w5", occasion:"Wedding", title:"Our Wedding",         desc:"Ring Box Line Art",  coverImg:"/books/book-ourwedding_ringbox.jpg",      pages:[...makeCoverPages("#ffffff","#fff"), ...makeBlankPages(14)] },
+
+  // ── ANNIVERSARY — New ────────────────────────────────────────────────────
+  { id:"tpl-ann3", occasion:"Anniversary", title:"2026",           desc:"Calendar Countdown",   coverImg:"/books/book-2026_calendar.jpg",           pages:[...makeCoverPages("#f8f0e0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann4", occasion:"Anniversary", title:"My Valentine",   desc:"Bow & Cherries",       coverImg:"/books/book-myvalentine_bow_cherries.jpg",pages:[...makeCoverPages("#4a0e0e","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann5", occasion:"Anniversary", title:"My Love",        desc:"Love Coupon",          coverImg:"/books/book-mylove_coupon.jpg",           pages:[...makeCoverPages("#a01838","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann6", occasion:"Anniversary", title:"My Galentine",   desc:"Ribbon Bow",           coverImg:"/books/book-mygalentine_bow.jpg",         pages:[...makeCoverPages("#c06888","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann7", occasion:"Anniversary", title:"My Valentine",   desc:"Heart Lock",           coverImg:"/books/book-myvalentine_heartlock.jpg",   pages:[...makeCoverPages("#4a0e0e","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann8", occasion:"Anniversary", title:"My Forever",     desc:"Line Art Rose",        coverImg:"/books/book-myforever_rose.jpg",          pages:[...makeCoverPages("#3a0808","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann9", occasion:"Anniversary", title:"Always You",     desc:"Heart Lock & Key",     coverImg:"/books/book-alwaysyou_lockkey.jpg",       pages:[...makeCoverPages("#fce0ec","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann10", occasion:"Anniversary", title:"Me & You",       desc:"Heart Dice",           coverImg:"/books/book-meandyou_dice.jpg",           pages:[...makeCoverPages("#8b1a1a","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-ann11", occasion:"Anniversary", title:"Our Story",      desc:"Fingerprint Heart",    coverImg:"/books/book-ourstory_fingerprint.jpg",    pages:[...makeCoverPages("#fbeaea","#fff"), ...makeBlankPages(14)] },
+
+  // ── FAMILY — Mother's / Father's Day ────────────────────────────────────
+  { id:"tpl-fam1", occasion:"Family", title:"إلى أمي",        desc:"Floral Box Arabic",    coverImg:"/books/book-ila_ommi_box.jpg",            pages:[...makeCoverPages("#f0d8e4","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam2", occasion:"Family", title:"For Mom",         desc:"Tulip Gift Box",       coverImg:"/books/book-formom_tulipbox.jpg",         pages:[...makeCoverPages("#d888a0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam3", occasion:"Family", title:"Sending You Lots of Love", desc:"Flower Box Outline", coverImg:"/books/book-sendinglove_flowerbox.jpg", pages:[...makeCoverPages("#f8c8dc","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam4", occasion:"Family", title:"أمي",            desc:"Floral Paper Bag Arabic", coverImg:"/books/book-ommi_bag.jpg",              pages:[...makeCoverPages("#fadce4","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam5", occasion:"Family", title:"Happy Mama Day",  desc:"Hands Line Art",       coverImg:"/books/book-happymamaday_hands.jpg",      pages:[...makeCoverPages("#faf4ea","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam6", occasion:"Family", title:"Mother's Day",    desc:"Hands Sketch",         coverImg:"/books/book-mothersday_hands.jpg",        pages:[...makeCoverPages("#faf4ea","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam7", occasion:"Family", title:"CEO of the Family", desc:"Necktie Blue",       coverImg:"/books/book-ceo_family_tie.jpg",          pages:[...makeCoverPages("#7ba8f0","#fff"), ...makeBlankPages(14)] },
+  { id:"tpl-fam8", occasion:"Family", title:"Dad Always",      desc:"Necktie Collection",   coverImg:"/books/book-dadalways_ties.jpg",          pages:[...makeCoverPages("#faf4ea","#fff"), ...makeBlankPages(14)] },
 
   // ── Existing SVG-based templates ──────────────────────────────────────────
   { id:"w1", occasion:"Wedding", title:"Our Wedding Day",    desc:"Classic floral pink",
