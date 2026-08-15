@@ -206,34 +206,94 @@ async function savePagesToFirestore(paymentId, pages) {
 }
 
 
-// Renders each album page div to canvas via html2canvas, then packs them all
-// into a single jsPDF document at print-quality resolution (scale: 2).
-// Returns the jsPDF instance so the caller can save() or open it.
-async function exportAlbumToPDF(pageRefs, title = "Miora Album") {
+// The size (in CSS px) that the hidden off-screen "raster layer" containers are
+// rendered at for PDF generation — a large jump from the 400x520 on-screen editor
+// preview, chosen to land close to true 300dpi print resolution on an A4 page
+// while staying light enough for a browser to rasterize page-by-page without
+// running out of memory. Kept as a named export so the admin renderer and the
+// PDF packer always agree on the same coordinate space.
+const PDF_RENDER_WIDTH  = 2000;
+const PDF_RENDER_HEIGHT = 2600; // same 400:520 aspect ratio as the editor canvas, scaled 5x
+const PDF_RENDER_SCALE  = PDF_RENDER_WIDTH / 400;
+
+function hexToRgb(hex) {
+  const clean = (hex || "#4A3068").replace("#", "");
+  const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
+  const num = parseInt(full, 16);
+  if (isNaN(num)) return [74, 48, 104];
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+// Builds the final print PDF from two inputs per page:
+//   1. `rasterRefs[i]` — a DOM ref to a hidden, high-resolution container holding
+//      ONLY the background, photos, and stickers for that page (no text). This
+//      gets rasterized via html2canvas — the only place actual pixels are limited
+//      by source image resolution, which is unavoidable for photos.
+//   2. `pages[i].elements` — the original page data, used to draw every text
+//      element as REAL vector text directly into the PDF via jsPDF's text APIs.
+//      Vector text has no resolution ceiling at all — it's crisp at any zoom,
+//      completely free, and no longer limited by canvas/render resolution.
+// This split is what actually fixes blurry text/borders without needing any
+// paid storage — only photo detail is still capped by what's stored.
+async function exportAlbumToPDF(pages, rasterRefs, title = "Miora Album") {
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pdfWidth  = pdf.internal.pageSize.getWidth();
   const pdfHeight = pdf.internal.pageSize.getHeight();
 
-  for (let i = 0; i < pageRefs.length; i++) {
-    const el = pageRefs[i];
+  for (let i = 0; i < pages.length; i++) {
+    const pg = pages[i];
+    const el = rasterRefs[i];
     if (!el) continue;
 
+    // ── Raster layer: background + photos + stickers only ──────────────────
     const canvas = await html2canvas(el, {
-      scale: 2,                  // 2x = crisp at print resolution
+      scale: 1.5,                 // extra supersampling on top of the already-large native render size
       useCORS: true,
-      backgroundColor: el.style.background || "#ffffff",
+      backgroundColor: pg.background || "#ffffff",
       logging: false,
     });
 
-    const imgData   = canvas.toDataURL("image/jpeg", 0.92);
+    const imgData   = canvas.toDataURL("image/png"); // lossless — the finished PDF is never stored, so size has no cost
     const imgWidth  = pdfWidth;
     const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
     if (i > 0) pdf.addPage();
 
-    // Center vertically if page is shorter than A4
     const yOffset = imgHeight < pdfHeight ? (pdfHeight - imgHeight) / 2 : 0;
-    pdf.addImage(imgData, "JPEG", 0, yOffset, imgWidth, imgHeight);
+    pdf.addImage(imgData, "PNG", 0, yOffset, imgWidth, imgHeight);
+
+    // px (render container) → mm (PDF page) conversion factor
+    const pxToMm = imgWidth / PDF_RENDER_WIDTH;
+
+    // ── Vector layer: real, crisp text drawn directly on top ────────────────
+    (pg.elements || []).filter(elm => elm.type === "text").forEach(te => {
+      const xPx = (te.x || 0) * PDF_RENDER_SCALE;
+      const yPx = (te.y || 0) * PDF_RENDER_SCALE;
+      const wPx = (te.w || 0) * PDF_RENDER_SCALE;
+      const hPx = (te.h || 0) * PDF_RENDER_SCALE;
+
+      const xMm = xPx * pxToMm;
+      const yMm = yOffset + (yPx * pxToMm);
+      const wMm = wPx * pxToMm;
+      const hMm = hPx * pxToMm;
+
+      const fontSizePx = (te.fontSize || 18) * PDF_RENDER_SCALE;
+      const fontSizePt = fontSizePx * pxToMm * 2.83465; // mm → pt
+
+      pdf.setFont("helvetica", te.bold ? "bold" : (te.italic ? "italic" : "normal"));
+      pdf.setFontSize(fontSizePt);
+      const [r, g, b] = hexToRgb(te.color);
+      pdf.setTextColor(r, g, b);
+
+      const lines = pdf.splitTextToSize(te.content || "", wMm);
+      const lineHeight = fontSizePt * 0.3528; // pt → mm line height approximation
+      const blockHeight = lines.length * lineHeight;
+      let cursorY = yMm + (hMm - blockHeight) / 2 + lineHeight * 0.8;
+      lines.forEach(line => {
+        pdf.text(line, xMm + wMm / 2, cursorY, { align: "center" });
+        cursorY += lineHeight;
+      });
+    });
   }
 
   pdf.setProperties({ title, creator: "Miora by Layal" });
@@ -2482,12 +2542,13 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
       setPdfPages(fetchedPages);
 
       // Wait for the hidden pages to mount + images to decode before rasterizing.
-      await new Promise(res => setTimeout(res, 400));
+      // Slightly longer than before since the render container is now much larger.
+      await new Promise(res => setTimeout(res, 600));
       const refs = pdfPageRefs.current.filter(Boolean);
       if (refs.length === 0) throw new Error("Hidden page refs did not mount");
 
       const title = pay.projectTitle || `Order-${pay.id.slice(0, 8)}`;
-      const pdf = await exportAlbumToPDF(refs, title);
+      const pdf = await exportAlbumToPDF(fetchedPages, refs, title);
       pdf.save(`${title.replace(/\s+/g, "-")}-print.pdf`);
     } catch (err) {
       console.error("Admin PDF generation failed:", err);
@@ -2736,17 +2797,23 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
         )}
       </div>
 
-      {/* ── Hidden off-screen pages, rasterized into the print PDF via html2canvas ── */}
+      {/* ── Hidden off-screen "raster layer": background + photos + stickers ONLY,
+          rendered at near-print resolution (PDF_RENDER_WIDTH/HEIGHT). Text is
+          intentionally excluded here — exportAlbumToPDF draws it separately as
+          real vector PDF text for maximum crispness at zero extra cost. ── */}
       {pdfPages && (
         <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
           {pdfPages.map((pg, i) => (
             <div key={i} ref={el => { pdfPageRefs.current[i] = el; }}
-              style={{ width:400, height:520, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
-              {(pg.elements||[]).map((el, ei) => (
-                <div key={el.id||ei} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h, transform:`rotate(${el.rotation||0}deg)` }}>
+              style={{ width:PDF_RENDER_WIDTH, height:PDF_RENDER_HEIGHT, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
+              {(pg.elements||[]).filter(el => el.type !== "text").map((el, ei) => (
+                <div key={el.id||ei} style={{
+                  position:"absolute",
+                  left:(el.x||0)*PDF_RENDER_SCALE, top:(el.y||0)*PDF_RENDER_SCALE,
+                  width:(el.w||0)*PDF_RENDER_SCALE, height:(el.h||0)*PDF_RENDER_SCALE,
+                  transform:`rotate(${el.rotation||0}deg)` }}>
                   {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
-                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1 }}>{el.content}</div>}
-                  {el.type==="text" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18, color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal", textAlign:"center", padding:4, wordBreak:"break-word", whiteSpace:"pre-wrap" }}>{el.content}</div>}
+                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min((el.w||0),(el.h||0))*PDF_RENDER_SCALE*0.7, lineHeight:1 }}>{el.content}</div>}
                 </div>
               ))}
             </div>
