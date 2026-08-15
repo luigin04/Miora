@@ -236,7 +236,18 @@ function hexToRgb(hex) {
 // This split is what actually fixes blurry text/borders without needing any
 // paid storage — only photo detail is still capped by what's stored.
 async function exportAlbumToPDF(pages, rasterRefs, title = "Miora Album") {
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  // The album is designed at a 400:520 (≈10:13) ratio, not A4's ≈10:14.1 ratio.
+  // Using a generic "a4" format here was leaving the design shorter than the PDF
+  // page, which jsPDF then centered vertically — exactly the white bars seen in
+  // the exported file. Building a custom page size that matches the design's own
+  // ratio exactly means the artwork fills the page edge-to-edge with zero gaps.
+  // NOTE: 210mm width is a placeholder physical size — if the print supplier has
+  // a specific trim size (e.g. 20x20cm, 15x20cm), swap these two numbers for the
+  // real ones and the ratio math below still holds.
+  const PDF_PAGE_WIDTH_MM  = 210;
+  const PDF_PAGE_HEIGHT_MM = PDF_PAGE_WIDTH_MM * (PDF_RENDER_HEIGHT / PDF_RENDER_WIDTH);
+
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [PDF_PAGE_WIDTH_MM, PDF_PAGE_HEIGHT_MM] });
   const pdfWidth  = pdf.internal.pageSize.getWidth();
   const pdfHeight = pdf.internal.pageSize.getHeight();
 
