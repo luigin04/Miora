@@ -2895,6 +2895,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const [lastSaved,   setLastSaved]   = useState(null);
   const [dragging,    setDragging]    = useState(null);   // { elId, startX, startY, origX, origY }
   const [resizing,    setResizing]    = useState(null);
+  const [pinch,       setPinch]       = useState(null);   // { elId, startDist, origW, origH, origFontSize } — two-finger resize on mobile
 
   // Mobile-specific state
   const [mobilePanel, setMobilePanel] = useState(null); // null | "stickers" | "fonts" | "pages" | "backgrounds"
@@ -2914,8 +2915,8 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const rightPageIdx  = spreadIndex * 2 + 1;
   const leftPage      = pages[leftPageIdx]  || { id:"empty-l", background:"#ffffff", elements:[] };
   const rightPage     = pages[rightPageIdx] || { id:"empty-r", background:"#ffffff", elements:[] };
-  const activePageIdx = activeSide === "left" ? leftPageIdx : rightPageIdx;
-  const page          = activeSide === "left" ? leftPage : rightPage;
+  const activePageIdx = isMobile ? currentPage : (activeSide === "left" ? leftPageIdx : rightPageIdx);
+  const page          = isMobile ? (pages[currentPage] || { id:"empty", background:"#ffffff", elements:[] }) : (activeSide === "left" ? leftPage : rightPage);
   const totalSpreads  = Math.ceil(pages.length / 2);
 
   // ── Auto-save every 30 s ────────────────────────────────────────────────
@@ -3041,13 +3042,16 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
       });
     }
   };
-  const onMouseUp = () => { setDragging(null); setResizing(null); };
+  const onMouseUp = () => { setDragging(null); setResizing(null); setPinch(null); };
   const onResizeMouseDown = (e, elId) => {
     e.stopPropagation();
     const el = (page.elements||[]).find(x => x.id===elId);
     if (!el) return;
     setResizing({ elId, startX:e.clientX, startY:e.clientY, origW:el.w, origH:el.h });
   };
+
+  // ── Touch helpers (mobile) ───────────────────────────────────────────────
+  const touchDist = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
 
   // ── AI layout generator (algorithmic) ────────────────────────────────────
   const runAI = async () => {
@@ -3219,7 +3223,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
 
         {/* Canvas area */}
         <div style={{ flex:1, display:"flex", alignItems:"flex-start", justifyContent:"center",
-          padding:"16px 16px 120px", overflowY:"auto", background:"#f4f0fb" }}>
+          padding:"16px 16px 120px", overflowY: (dragging||resizing||pinch) ? "hidden" : "auto", background:"#f4f0fb" }}>
           <div onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}
             onClick={e => { if(e.target.dataset.canvas) setSelected(null); }}
             style={{ width:CANVAS_W, height:CANVAS_H, background:mobilePage.background||"#ffffff",
@@ -3233,17 +3237,42 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 onTouchStart={e => {
                   e.stopPropagation();
                   setSelected(el.id);
-                  const touch = e.touches[0];
-                  setDragging({ elId:el.id, startX:touch.clientX, startY:touch.clientY, origX:el.x, origY:el.y });
+                  if (e.touches.length === 2) {
+                    // Two fingers → start pinch-resize instead of drag
+                    setDragging(null);
+                    setPinch({
+                      elId: el.id,
+                      startDist: touchDist(e.touches[0], e.touches[1]),
+                      origW: el.w, origH: el.h, origFontSize: el.fontSize || 18,
+                    });
+                  } else {
+                    const touch = e.touches[0];
+                    setDragging({ elId:el.id, startX:touch.clientX, startY:touch.clientY, origX:el.x, origY:el.y });
+                  }
                 }}
                 onTouchMove={e => {
+                  e.stopPropagation();
+                  e.preventDefault(); // stop the ancestor page/canvas from scrolling while editing this element
+                  if (pinch && pinch.elId === el.id && e.touches.length === 2) {
+                    const newDist = touchDist(e.touches[0], e.touches[1]);
+                    const scale = newDist / pinch.startDist;
+                    const newW = Math.max(30, Math.round(pinch.origW * scale));
+                    const newH = Math.max(30, Math.round(pinch.origH * scale));
+                    if (el.type === "text") {
+                      const newFontSize = Math.max(8, Math.min(120, Math.round(pinch.origFontSize * scale)));
+                      updateElement(el.id, { w:newW, h:newH, fontSize:newFontSize });
+                    } else {
+                      updateElement(el.id, { w:newW, h:newH });
+                    }
+                    return;
+                  }
                   if (!dragging || dragging.elId !== el.id) return;
                   const touch = e.touches[0];
                   const dx = touch.clientX - dragging.startX;
                   const dy = touch.clientY - dragging.startY;
                   updateElement(el.id, { x:dragging.origX+dx, y:dragging.origY+dy });
                 }}
-                onTouchEnd={() => setDragging(null)}
+                onTouchEnd={e => { e.stopPropagation(); setDragging(null); setPinch(null); }}
                 style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
                   transform:`rotate(${el.rotation||0}deg)`, userSelect:"none",
                   outline: selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
@@ -3264,6 +3293,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                     <textarea autoFocus value={el.content}
                       onChange={e => updateElement(el.id,{content:e.target.value})}
                       onMouseDown={e => e.stopPropagation()}
+                      onTouchStart={e => e.stopPropagation()}
                       style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
                         fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
                         color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
@@ -3278,9 +3308,26 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   )
                 )}
                 {selected===el.id && (
-                  <div onMouseDown={e => onResizeMouseDown(e, el.id)}
-                    style={{ position:"absolute", right:-6, bottom:-6, width:16, height:16, borderRadius:"50%",
-                      background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
+                  <div
+                    onMouseDown={e => onResizeMouseDown(e, el.id)}
+                    onTouchStart={e => {
+                      e.stopPropagation();
+                      const touch = e.touches[0];
+                      setResizing({ elId:el.id, startX:touch.clientX, startY:touch.clientY, origW:el.w, origH:el.h });
+                    }}
+                    onTouchMove={e => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (!resizing || resizing.elId !== el.id) return;
+                      const touch = e.touches[0];
+                      const dx = touch.clientX - resizing.startX;
+                      const dy = touch.clientY - resizing.startY;
+                      updateElement(el.id, { w:Math.max(30, resizing.origW+dx), h:Math.max(30, resizing.origH+dy) });
+                    }}
+                    onTouchEnd={e => { e.stopPropagation(); setResizing(null); }}
+                    style={{ position:"absolute", right:-14, bottom:-14, width:28, height:28, borderRadius:"50%",
+                      background:DEEP_PURPLE, cursor:"se-resize", border:"3px solid white", zIndex:10,
+                      touchAction:"none", boxShadow:"0 2px 8px rgba(0,0,0,0.25)" }} />
                 )}
               </div>
             ))}
@@ -3305,15 +3352,24 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             display:"flex", gap:8, alignItems:"center", overflowX:"auto" }}>
             {selEl.type==="text" && (
               <>
-                <input type="number" value={selEl.fontSize||18} min={8} max={80}
-                  onChange={e => updateElement(selEl.id,{fontSize:parseInt(e.target.value)||18})}
-                  style={{ width:48, padding:"4px 6px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}30`, fontSize:12, color:DARK_PURPLE }} />
+                <div style={{ display:"flex", alignItems:"center", gap:2, background:`${PASTEL_PURPLE}10`, borderRadius:8, padding:2, flexShrink:0 }}>
+                  <button onClick={() => updateElement(selEl.id,{fontSize:Math.max(8,(selEl.fontSize||18)-2)})}
+                    style={{ width:28, height:28, borderRadius:6, border:"none", background:"white", color:DEEP_PURPLE,
+                      fontSize:16, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>−</button>
+                  <span style={{ width:28, textAlign:"center", fontSize:12, fontWeight:700, color:DARK_PURPLE }}>{selEl.fontSize||18}</span>
+                  <button onClick={() => updateElement(selEl.id,{fontSize:Math.min(120,(selEl.fontSize||18)+2)})}
+                    style={{ width:28, height:28, borderRadius:6, border:"none", background:"white", color:DEEP_PURPLE,
+                      fontSize:16, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>+</button>
+                </div>
                 <input type="color" value={selEl.color||"#4A3068"}
                   onChange={e => updateElement(selEl.id,{color:e.target.value})}
-                  style={{ width:28, height:28, border:"none", borderRadius:6, cursor:"pointer" }} />
+                  style={{ width:28, height:28, border:"none", borderRadius:6, cursor:"pointer", flexShrink:0 }} />
                 <button onClick={() => updateElement(selEl.id,{bold:!selEl.bold})}
                   style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${selEl.bold?DEEP_PURPLE:PASTEL_PURPLE}30`,
-                    background:selEl.bold?`${PASTEL_PURPLE}20`:"transparent", fontSize:13, fontWeight:"bold", color:DEEP_PURPLE, cursor:"pointer" }}>B</button>
+                    background:selEl.bold?`${PASTEL_PURPLE}20`:"transparent", fontSize:13, fontWeight:"bold", color:DEEP_PURPLE, cursor:"pointer", flexShrink:0 }}>B</button>
+                <button onClick={() => updateElement(selEl.id,{italic:!selEl.italic})}
+                  style={{ padding:"4px 10px", borderRadius:8, border:`1px solid ${selEl.italic?DEEP_PURPLE:PASTEL_PURPLE}30`,
+                    background:selEl.italic?`${PASTEL_PURPLE}20`:"transparent", fontSize:13, fontStyle:"italic", color:DEEP_PURPLE, cursor:"pointer", flexShrink:0 }}>I</button>
               </>
             )}
             <button onClick={() => bringForward(selEl.id)}
