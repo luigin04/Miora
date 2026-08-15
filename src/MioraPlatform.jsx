@@ -247,20 +247,20 @@ async function exportAlbumToPDF(pages, rasterRefs, title = "Miora Album") {
 
     // ── Raster layer: background + photos + stickers only ──────────────────
     const canvas = await html2canvas(el, {
-      scale: 1.5,                 // extra supersampling on top of the already-large native render size
+      scale: 1,                   // native render size (PDF_RENDER_WIDTH/HEIGHT) is already high-res — no extra multiplier needed
       useCORS: true,
       backgroundColor: pg.background || "#ffffff",
       logging: false,
     });
 
-    const imgData   = canvas.toDataURL("image/png"); // lossless — the finished PDF is never stored, so size has no cost
+    const imgData   = canvas.toDataURL("image/jpeg", 0.95); // high-quality JPEG — PNG ballooned file size with no real benefit since photos are already lossy-compressed at the source
     const imgWidth  = pdfWidth;
     const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
     if (i > 0) pdf.addPage();
 
     const yOffset = imgHeight < pdfHeight ? (pdfHeight - imgHeight) / 2 : 0;
-    pdf.addImage(imgData, "PNG", 0, yOffset, imgWidth, imgHeight);
+    pdf.addImage(imgData, "JPEG", 0, yOffset, imgWidth, imgHeight);
 
     // px (render container) → mm (PDF page) conversion factor
     const pxToMm = imgWidth / PDF_RENDER_WIDTH;
