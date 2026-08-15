@@ -2309,17 +2309,15 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
         status: "pending",
         proofImage: compressed,
         createdAt: new Date().toISOString(),
+        projectTitle: pendingProject?.title || null,
+        projectOccasion: pendingProject?.occasion || null,
+        pageCount: pendingProject?.pages?.length || 0,
       });
 
       // Best-effort: send the actual book design (pages/images/text) to Firestore too,
       // linked by this payment's own ID, so the admin can generate a print PDF once approved.
       if (pendingProject?.pages?.length) {
         try {
-          await setDoc(doc(db, "payments", docRef.id), {
-            projectTitle: pendingProject.title || null,
-            projectOccasion: pendingProject.occasion || null,
-            pageCount: pendingProject.pages.length,
-          }, { merge: true });
           await savePagesToFirestore(docRef.id, pendingProject.pages);
         } catch (pagesErr) {
           console.warn("Saving project pages failed (non-blocking):", pagesErr);
