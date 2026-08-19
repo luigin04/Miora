@@ -75,6 +75,40 @@ const DEFAULT_REVIEWS = [
 ];
 
 // Sticker packs — pure emoji so no external assets needed
+// Image-based sticker library. Each entry points to a transparent-background PNG
+// in /public/stickers/ and carries one or more categories, so the picker UI can
+// offer both a text search and category-chip filtering across hundreds of items.
+// Populated incrementally as sticker batches are processed — see STICKERS array below.
+const STICKERS = [
+  // ── Dubai / UAE batch ────────────────────────────────────────────────────
+  { id:"stk-001", src:"/stickers/sticker-uae_camel_flat.png",              name:"Camel",                  categories:["Dubai","UAE","Travel","Camel","Desert"] },
+  { id:"stk-002", src:"/stickers/sticker-dubai_badge_burjalarab.png",      name:"Dubai Badge",            categories:["Dubai","UAE","Travel","Landmark"] },
+  { id:"stk-003", src:"/stickers/sticker-burjalarab_flat_blue.png",        name:"Burj Al Arab",           categories:["Dubai","UAE","Travel","Landmark"] },
+  { id:"stk-004", src:"/stickers/sticker-uae_flag_brush.png",              name:"UAE Flag (Brush)",       categories:["Dubai","UAE","Travel","Flag"] },
+  { id:"stk-005", src:"/stickers/sticker-burjalarab_block_teal.png",       name:"Burj Al Arab (Teal)",    categories:["Dubai","UAE","Travel","Landmark"] },
+  { id:"stk-006", src:"/stickers/sticker-uae_flag_ribbon.png",             name:"UAE Flag (Ribbon)",      categories:["Dubai","UAE","Travel","Flag"] },
+  { id:"stk-007", src:"/stickers/sticker-uae_camel_postage_stamp.png",     name:"Camel Postage Stamp",    categories:["Dubai","UAE","Travel","Camel","Stamp"] },
+  { id:"stk-008", src:"/stickers/sticker-dubai_luggage_tag_green.png",     name:"Dubai Luggage Tag",      categories:["Dubai","UAE","Travel","Luggage Tag"] },
+  { id:"stk-009", src:"/stickers/sticker-dubai_skyline_lineart.png",       name:"Dubai Skyline",          categories:["Dubai","UAE","Travel","Skyline","Landmark"] },
+  { id:"stk-010", src:"/stickers/sticker-dubai_museum_of_future.png",      name:"Museum of the Future",   categories:["Dubai","UAE","Travel","Landmark","Architecture"] },
+  { id:"stk-011", src:"/stickers/sticker-dubai_frame.png",                 name:"Dubai Frame",            categories:["Dubai","UAE","Travel","Landmark","Architecture"] },
+  { id:"stk-012", src:"/stickers/sticker-dubai_luggage_tag_blue.png",      name:"DXB Luggage Tag",        categories:["Dubai","UAE","Travel","Luggage Tag"] },
+  { id:"stk-013", src:"/stickers/sticker-burjalarab_lineart.png",          name:"Burj Al Arab (Line Art)",categories:["Dubai","UAE","Travel","Landmark"] },
+  { id:"stk-014", src:"/stickers/sticker-uae_hand_flag.png",               name:"Hand Holding UAE Flag",  categories:["Dubai","UAE","Travel","Flag"] },
+  { id:"stk-015", src:"/stickers/sticker-uae_arabic_text.png",             name:"الإمارات (UAE Arabic Text)", categories:["Dubai","UAE","Travel","Text"] },
+  { id:"stk-016", src:"/stickers/sticker-dubai_museum_of_future_ring.png", name:"Museum of the Future (Ring)", categories:["Dubai","UAE","Travel","Landmark","Architecture"] },
+  { id:"stk-017", src:"/stickers/sticker-uae_passport_stamp_abudhabi.png", name:"Abu Dhabi Passport Stamp",categories:["Dubai","UAE","Travel","Stamp","Abu Dhabi"] },
+  { id:"stk-018", src:"/stickers/sticker-dubai_atlantis_palm.png",         name:"Atlantis The Palm",      categories:["Dubai","UAE","Travel","Landmark","Hotel"] },
+  { id:"stk-019", src:"/stickers/sticker-uae_desert_dunes.png",            name:"Desert Dunes",           categories:["Dubai","UAE","Travel","Desert"] },
+  { id:"stk-020", src:"/stickers/sticker-dubai_postage_stamp_scene.png",   name:"Dubai Postage Stamp",    categories:["Dubai","UAE","Travel","Landmark","Stamp"] },
+];
+
+// Every distinct category across STICKERS, computed once. "All" is prepended in the UI.
+const STICKER_CATEGORIES = Array.from(new Set(STICKERS.flatMap(s => s.categories))).sort();
+
+// Legacy emoji packs — kept only so stickers already placed in existing customers'
+// saved projects (before this feature) keep rendering correctly. Not shown as a
+// separate picker tab going forward once the image library has content.
 const STICKER_PACKS = {
   hearts:   { label:"Hearts 💜",    items:["💜","❤️","🧡","💛","💚","💙","🤍","🖤","💗","💕","💞","💓","💝","💖","💘","❣️"] },
   flowers:  { label:"Flowers 🌸",   items:["🌸","🌺","🌻","🌹","🌷","💐","🌼","🍀","🌿","🍃","🌱","🪷","🌾","🍂","🍁","🌴"] },
@@ -1878,7 +1912,7 @@ function TemplatePickerView({ onBack, onSelect, t, lang, isRTL, isMobile }) {
               <div key={el.id} style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 fontSize:Math.min(el.w, el.h)*0.7 }}>
-                {el.content}
+                {el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}
               </div>
             ))}
           </div>
@@ -2824,7 +2858,7 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                   width:(el.w||0)*PDF_RENDER_SCALE, height:(el.h||0)*PDF_RENDER_SCALE,
                   transform:`rotate(${el.rotation||0}deg)` }}>
                   {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
-                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min((el.w||0),(el.h||0))*PDF_RENDER_SCALE*0.7, lineHeight:1 }}>{el.content}</div>}
+                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min((el.w||0),(el.h||0))*PDF_RENDER_SCALE*0.7, lineHeight:1 }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain" }} /> : el.content}</div>}
                 </div>
               ))}
             </div>
@@ -2888,7 +2922,16 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const [occasion,    setOccasion]    = useState(project.occasion || "General");
   const [selected,    setSelected]    = useState(null);   // selected element id
   const [tool]                        = useState("select"); // select|text|sticker
-  const [stickerPack, setStickerPack] = useState("hearts");
+  const [stickerSearch,   setStickerSearch]   = useState("");
+  const [stickerCategory, setStickerCategory] = useState("All");
+
+  // Filters the image sticker library by category chip + free-text search across name/categories.
+  const filteredStickers = STICKERS.filter(s => {
+    const inCategory = stickerCategory === "All" || s.categories.includes(stickerCategory);
+    const q = stickerSearch.trim().toLowerCase();
+    const inSearch = !q || s.name.toLowerCase().includes(q) || s.categories.some(c => c.toLowerCase().includes(q));
+    return inCategory && inSearch;
+  });
   const [aiRunning,   setAiRunning]   = useState(false);
   const [aiDone,      setAiDone]      = useState(false);
   const [leftTab,     setLeftTab]     = useState("pages"); // pages|stickers|fonts|backgrounds
@@ -3009,8 +3052,15 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   };
 
   // ── Add sticker ──────────────────────────────────────────────────────────
-  const addSticker = emoji => {
-    addElement({ id:generateId(), type:"sticker", content:emoji, x:80+Math.random()*100, y:80+Math.random()*100, w:60, h:60, rotation:0 });
+  // Accepts either a sticker registry object ({src, name, ...}) for the new
+  // image-based library, or a raw emoji string for backward compatibility.
+  const addSticker = stickerOrEmoji => {
+    const isImage = stickerOrEmoji && typeof stickerOrEmoji === "object" && stickerOrEmoji.src;
+    addElement({
+      id:generateId(), type:"sticker",
+      ...(isImage ? { src: stickerOrEmoji.src } : { content: stickerOrEmoji }),
+      x:80+Math.random()*100, y:80+Math.random()*100, w:60, h:60, rotation:0,
+    });
   };
 
   // ── Add text ─────────────────────────────────────────────────────────────
@@ -3285,7 +3335,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 {el.type==="sticker" && (
                   <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
                     fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>
-                    {el.content}
+                    {el.src ? <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}
                   </div>
                 )}
                 {el.type==="text" && (
@@ -3459,26 +3509,48 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 {/* Stickers panel */}
                 {mobilePanel==="stickers" && (
                   <>
+                    <input value={stickerSearch} onChange={e=>setStickerSearch(e.target.value)}
+                      placeholder={t("Search stickers... (e.g. Dubai, Heart)","ابحث عن ملصقات... (مثال: دبي، قلب)")}
+                      style={{ width:"100%", padding:"10px 14px", borderRadius:12, border:`1px solid ${PASTEL_PURPLE}30`,
+                        fontSize:13, color:DARK_PURPLE, marginBottom:12, fontFamily:"'Quicksand',sans-serif", boxSizing:"border-box" }} />
                     <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:16, paddingBottom:4 }}>
-                      {Object.entries(STICKER_PACKS).map(([key,pack]) => (
-                        <button key={key} onClick={() => setStickerPack(key)}
+                      {["All", ...STICKER_CATEGORIES].map(cat => (
+                        <button key={cat} onClick={() => setStickerCategory(cat)}
                           style={{ whiteSpace:"nowrap", padding:"6px 12px", borderRadius:20, border:"none",
-                            background: stickerPack===key ? DEEP_PURPLE : `${PASTEL_PURPLE}15`,
-                            color: stickerPack===key ? "white" : DARK_PURPLE, fontSize:11, fontWeight:600,
+                            background: stickerCategory===cat ? DEEP_PURPLE : `${PASTEL_PURPLE}15`,
+                            color: stickerCategory===cat ? "white" : DARK_PURPLE, fontSize:11, fontWeight:600,
                             cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
-                          {pack.label}
+                          {cat}
                         </button>
                       ))}
                     </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:10 }}>
-                      {STICKER_PACKS[stickerPack]?.items.map((emoji,i) => (
-                        <button key={i} onClick={() => { addSticker(emoji); closePanel(); }}
-                          style={{ fontSize:28, background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}10`,
-                            borderRadius:10, padding:"10px 4px", cursor:"pointer" }}>
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+                    {filteredStickers.length > 0 ? (
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+                        {filteredStickers.map(s => (
+                          <button key={s.id} onClick={() => { addSticker(s); closePanel(); }}
+                            title={s.name}
+                            style={{ background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}10`,
+                              borderRadius:10, padding:8, cursor:"pointer", aspectRatio:"1", display:"flex",
+                              alignItems:"center", justifyContent:"center" }}>
+                            <img src={s.src} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+                          </button>
+                        ))}
+                      </div>
+                    ) : STICKERS.length === 0 ? (
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:10 }}>
+                        {(STICKER_PACKS.hearts?.items||[]).concat(STICKER_PACKS.stars?.items||[]).map((emoji,i) => (
+                          <button key={i} onClick={() => { addSticker(emoji); closePanel(); }}
+                            style={{ fontSize:28, background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}10`,
+                              borderRadius:10, padding:"10px 4px", cursor:"pointer" }}>
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ textAlign:"center", padding:"32px 16px", color:DARK_PURPLE, opacity:0.5, fontSize:13 }}>
+                        {t("No stickers found. Try a different search or category.","لم يتم العثور على ملصقات. جرّب بحثاً أو فئة مختلفة.")}
+                      </div>
+                    )}
                   </>
                 )}
                 {/* Fonts panel */}
@@ -3645,29 +3717,51 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             {/* Stickers tab */}
             {leftTab==="stickers" && (
               <>
-                <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, opacity:0.5, marginBottom:8 }}>{t("Sticker Packs","مجموعات الملصقات")}</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom:12 }}>
-                  {Object.entries(STICKER_PACKS).map(([key,pack]) => (
-                    <button key={key} onClick={() => setStickerPack(key)} style={{
-                      padding:"6px 10px", borderRadius:8, border:"none", textAlign:"left", cursor:"pointer", fontSize:12,
-                      background: stickerPack===key ? `${PASTEL_PURPLE}25` : "transparent",
-                      color: stickerPack===key ? DEEP_PURPLE : DARK_PURPLE,
-                      fontWeight: stickerPack===key ? 700 : 400, fontFamily:"'Quicksand',sans-serif" }}>
-                      {pack.label}
+                <input value={stickerSearch} onChange={e=>setStickerSearch(e.target.value)}
+                  placeholder={t("Search stickers... (e.g. Dubai, Heart)","ابحث عن ملصقات... (مثال: دبي، قلب)")}
+                  style={{ width:"100%", padding:"8px 12px", borderRadius:8, border:`1px solid ${PASTEL_PURPLE}30`,
+                    fontSize:12, color:DARK_PURPLE, marginBottom:10, fontFamily:"'Quicksand',sans-serif", boxSizing:"border-box" }} />
+                <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:12 }}>
+                  {["All", ...STICKER_CATEGORIES].map(cat => (
+                    <button key={cat} onClick={() => setStickerCategory(cat)} style={{
+                      padding:"4px 9px", borderRadius:14, border:"none", cursor:"pointer", fontSize:11,
+                      background: stickerCategory===cat ? DEEP_PURPLE : `${PASTEL_PURPLE}15`,
+                      color: stickerCategory===cat ? "white" : DARK_PURPLE,
+                      fontWeight: stickerCategory===cat ? 700 : 500, fontFamily:"'Quicksand',sans-serif" }}>
+                      {cat}
                     </button>
                   ))}
                 </div>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
-                  {STICKER_PACKS[stickerPack]?.items.map((emoji,i) => (
-                    <button key={i} onClick={() => addSticker(emoji)} style={{
-                      fontSize:22, background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}15`,
-                      borderRadius:8, padding:"8px 4px", cursor:"pointer", transition:"transform 0.15s" }}
-                      onMouseEnter={e=>e.currentTarget.style.transform="scale(1.2)"}
-                      onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
+                {filteredStickers.length > 0 ? (
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+                    {filteredStickers.map(s => (
+                      <button key={s.id} onClick={() => addSticker(s)} title={s.name} style={{
+                        background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}15`,
+                        borderRadius:8, padding:6, cursor:"pointer", transition:"transform 0.15s",
+                        aspectRatio:"1", display:"flex", alignItems:"center", justifyContent:"center" }}
+                        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"}
+                        onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+                        <img src={s.src} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+                      </button>
+                    ))}
+                  </div>
+                ) : STICKERS.length === 0 ? (
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+                    {(STICKER_PACKS.hearts?.items||[]).concat(STICKER_PACKS.stars?.items||[]).map((emoji,i) => (
+                      <button key={i} onClick={() => addSticker(emoji)} style={{
+                        fontSize:22, background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}15`,
+                        borderRadius:8, padding:"8px 4px", cursor:"pointer", transition:"transform 0.15s" }}
+                        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.2)"}
+                        onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ textAlign:"center", padding:"24px 8px", color:DARK_PURPLE, opacity:0.5, fontSize:12 }}>
+                    {t("No stickers found. Try a different search or category.","لم يتم العثور على ملصقات. جرّب بحثاً أو فئة مختلفة.")}
+                  </div>
+                )}
               </>
             )}
 
@@ -3814,7 +3908,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                       outline: activeSide==="left" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
                       outlineOffset:2 }}>
                     {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
-                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.content}</div>}
+                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}</div>}
                     {el.type==="text" && (
                       activeSide==="left" && selected===el.id ? (
                         <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
@@ -3881,7 +3975,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                       outline: activeSide==="right" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
                       outlineOffset:2 }}>
                     {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
-                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.content}</div>}
+                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}</div>}
                     {el.type==="text" && (
                       activeSide==="right" && selected===el.id ? (
                         <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
