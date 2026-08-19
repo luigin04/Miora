@@ -163,15 +163,6 @@ function saveToStorage(key, value) {
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
-// Convert a File to base64 string so it can survive localStorage (used for editor images)
-function fileToBase64(file) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload  = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(file);
-  });
-}
 // Compress + resize an uploaded image file down to a small JPEG data URL so it fits
 // comfortably inside a single Firestore document (1MB limit) without needing paid Storage.
 function compressImageFile(file, maxWidth = 900, quality = 0.7) {
