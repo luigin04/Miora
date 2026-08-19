@@ -3218,6 +3218,18 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   };
 
   // ── Drag handling ─────────────────────────────────────────────────────────
+  // All elements are always positioned/sized in this fixed 400x520 "logical"
+  // coordinate space — matching desktop's page canvas AND what the PDF
+  // generator assumes (PDF_RENDER_SCALE = PDF_RENDER_WIDTH/400). On mobile the
+  // canvas is shown smaller to fit the phone screen, but purely as a visual
+  // CSS scale-down; the underlying coordinates never change. Without this,
+  // elements placed on mobile were stored relative to whatever width the
+  // phone screen happened to be, which never matched the fixed space the PDF
+  // renderer expects — producing exactly the stretched/misplaced content
+  // reported when a mobile-built page was exported.
+  const PAGE_W = 400, PAGE_H = 520;
+  const canvasScale = isMobile ? Math.min(window.innerWidth - 32, 360) / PAGE_W : 1;
+
   const onMouseDownEl = (e, elId) => {
     e.stopPropagation();
     setSelected(elId);
@@ -3227,13 +3239,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   };
   const onMouseMove = e => {
     if (dragging) {
-      const dx = e.clientX - dragging.startX;
-      const dy = e.clientY - dragging.startY;
+      const dx = (e.clientX - dragging.startX) / canvasScale;
+      const dy = (e.clientY - dragging.startY) / canvasScale;
       updateElement(dragging.elId, { x: dragging.origX+dx, y: dragging.origY+dy });
     }
     if (resizing) {
-      const dx = e.clientX - resizing.startX;
-      const dy = e.clientY - resizing.startY;
+      const dx = (e.clientX - resizing.startX) / canvasScale;
+      const dy = (e.clientY - resizing.startY) / canvasScale;
       updateElement(resizing.elId, {
         w: Math.max(30, resizing.origW+dx),
         h: Math.max(30, resizing.origH+dy),
@@ -3353,8 +3365,11 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   if (isMobile) {
     const mobilePage = pages[currentPage] || pages[0];
     const mobilePageIdx = currentPage;
-    const CANVAS_W = Math.min(window.innerWidth - 32, 360);
-    const CANVAS_H = Math.round(CANVAS_W * 1.3);
+    // Visual on-screen size only — the actual element coordinates always live
+    // in the fixed PAGE_W x PAGE_H space (see canvasScale above), scaled down
+    // purely with CSS transform for display on a narrow phone screen.
+    const CANVAS_W = Math.round(PAGE_W * canvasScale);
+    const CANVAS_H = Math.round(PAGE_H * canvasScale);
 
     const openPanel = (panel) => {
       setMobilePanel(panel);
@@ -3440,6 +3455,12 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
               boxShadow:"0 6px 24px rgba(0,0,0,0.10)" }}
             data-canvas="true">
 
+            {/* Fixed 400x520 logical canvas — every element's x/y/w/h is stored
+                relative to THIS space, matching desktop and the PDF generator.
+                Scaled down purely for display on a narrow phone screen. */}
+            <div data-canvas="true" style={{ width:PAGE_W, height:PAGE_H, position:"absolute", top:0, left:0,
+              transform:`scale(${canvasScale})`, transformOrigin:"top left" }}>
+
             {(mobilePage.elements||[]).map(el => (
               <div key={el.id}
                 onMouseDown={e => onMouseDownEl(e, el.id)}
@@ -3477,8 +3498,8 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   }
                   if (!dragging || dragging.elId !== el.id) return;
                   const touch = e.touches[0];
-                  const dx = touch.clientX - dragging.startX;
-                  const dy = touch.clientY - dragging.startY;
+                  const dx = (touch.clientX - dragging.startX) / canvasScale;
+                  const dy = (touch.clientY - dragging.startY) / canvasScale;
                   updateElement(el.id, { x:dragging.origX+dx, y:dragging.origY+dy });
                 }}
                 onTouchEnd={e => { e.stopPropagation(); setDragging(null); setPinch(null); }}
@@ -3529,8 +3550,8 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                       e.preventDefault();
                       if (!resizing || resizing.elId !== el.id) return;
                       const touch = e.touches[0];
-                      const dx = touch.clientX - resizing.startX;
-                      const dy = touch.clientY - resizing.startY;
+                      const dx = (touch.clientX - resizing.startX) / canvasScale;
+                      const dy = (touch.clientY - resizing.startY) / canvasScale;
                       updateElement(el.id, { w:Math.max(30, resizing.origW+dx), h:Math.max(30, resizing.origH+dy) });
                     }}
                     onTouchEnd={e => { e.stopPropagation(); setResizing(null); }}
@@ -3542,7 +3563,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             ))}
 
             {(mobilePage.elements||[]).length === 0 && (
-              <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
+              <div data-canvas="true" style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column",
                 alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
                 <div style={{ fontSize:28, marginBottom:8, opacity:0.15 }}>📷</div>
                 <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.2, textAlign:"center", padding:"0 24px" }}>
@@ -3550,6 +3571,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
 
