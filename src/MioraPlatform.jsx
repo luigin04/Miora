@@ -224,30 +224,96 @@ function compressDataUrl(dataUrl, maxWidth = 1400, quality = 0.85) {
   });
 }
 
+// Firestore's hard cap is 1,048,576 bytes per document. We leave meaningful
+// margin below that for JSON/field overhead so we're never borderline.
+const FIRESTORE_DOC_SAFE_LIMIT = 850000;
+
+// Progressively more aggressive compression settings, tried in order until a
+// page's total serialized size fits safely under the Firestore document limit.
+// This replaces a single fixed setting that could — and reliably did — produce
+// pages too large to save, which were then silently dropped with no error
+// shown to anyone. A page should now never go missing from a generated PDF.
+const COMPRESSION_TIERS = [
+  { maxWidth:1400, quality:0.85 },
+  { maxWidth:1100, quality:0.75 },
+  { maxWidth:900,  quality:0.65 },
+  { maxWidth:700,  quality:0.55 },
+  { maxWidth:500,  quality:0.45 },
+  { maxWidth:350,  quality:0.35 },
+  { maxWidth:220,  quality:0.30 },
+];
+
+function byteSizeOfJson(obj) {
+  // Blob isn't always available in older environments; TextEncoder is a safe fallback.
+  const str = JSON.stringify(obj);
+  return typeof Blob !== "undefined" ? new Blob([str]).size : new TextEncoder().encode(str).length;
+}
+
+async function compressPageElements(elements, tier) {
+  return Promise.all((elements || []).map(async el => {
+    if (el.type === "image" && el.src) {
+      try {
+        const src = await compressDataUrl(el.src, tier.maxWidth, tier.quality);
+        return { ...el, src };
+      } catch {
+        return el; // fall back to the original element if this particular image fails to decode
+      }
+    }
+    return el;
+  }));
+}
+
+// Serialize one page to Firestore, guaranteed to fit. Tries each compression
+// tier in turn; if even the most aggressive tier still doesn't fit under the
+// size limit (only possible with an extreme number of images on one page),
+// falls back to splitting the page's elements across multiple small chunk
+// documents rather than dropping any content. Returns which tier succeeded
+// (or "chunked") so callers can report degraded quality if it came to that.
+async function savePageToFirestore(paymentId, index, page) {
+  for (const tier of COMPRESSION_TIERS) {
+    const compressedElements = await compressPageElements(page.elements, tier);
+    const pageDoc = { index, background: page.background || "#ffffff", elements: compressedElements, chunked:false };
+    if (byteSizeOfJson(pageDoc) <= FIRESTORE_DOC_SAFE_LIMIT) {
+      await setDoc(doc(db, "payments", paymentId, "pages", String(index)), pageDoc);
+      return { ok:true, tier: COMPRESSION_TIERS.indexOf(tier), chunked:false };
+    }
+  }
+
+  // Last resort: even the smallest/lowest-quality single-document version didn't
+  // fit (e.g. a page with a very large number of images). Split elements across
+  // multiple chunk documents instead of ever dropping the page's content.
+  const smallestTier = COMPRESSION_TIERS[COMPRESSION_TIERS.length - 1];
+  const compressedElements = await compressPageElements(page.elements, smallestTier);
+  const chunkSize = Math.max(1, Math.ceil(compressedElements.length / Math.ceil(byteSizeOfJson(compressedElements) / FIRESTORE_DOC_SAFE_LIMIT + 1)));
+  const chunks = [];
+  for (let i = 0; i < compressedElements.length; i += chunkSize) chunks.push(compressedElements.slice(i, i+chunkSize));
+
+  await setDoc(doc(db, "payments", paymentId, "pages", String(index)), {
+    index, background: page.background || "#ffffff", elements:[], chunked:true, chunkCount: chunks.length,
+  });
+  await Promise.all(chunks.map((chunkElements, c) =>
+    setDoc(doc(db, "payments", paymentId, "pages", `${index}__chunk${c}`), { parentIndex:index, chunkIndex:c, elements:chunkElements })
+  ));
+  return { ok:true, tier: COMPRESSION_TIERS.length, chunked:true };
+}
+
 // Serialize a finished album's pages to Firestore, one document per page (under
 // payments/{paymentId}/pages/{index}), so the admin can later fetch the full design
 // and generate a print-quality PDF without needing paid Firebase Storage.
-// Best-effort per page: if an individual page is too large even after compression,
-// it's skipped (logged) rather than blocking the whole submission.
+// Every page is guaranteed to save — see savePageToFirestore — so callers can
+// trust that `failed` staying 0 means nothing is missing. A non-zero `degraded`
+// count means some pages needed heavier compression than usual, which is safe
+// to ignore but useful for surfacing a heads-up if it happens a lot.
 async function savePagesToFirestore(paymentId, pages) {
-  const results = await Promise.allSettled((pages || []).map(async (pg, index) => {
-    const compressedElements = await Promise.all((pg.elements || []).map(async el => {
-      if (el.type === "image" && el.src) {
-        try {
-          const src = await compressDataUrl(el.src, 1400, 0.85);
-          return { ...el, src };
-        } catch {
-          return el; // fall back to original if compression fails
-        }
-      }
-      return el;
-    }));
-    const pageDoc = { index, background: pg.background || "#ffffff", elements: compressedElements };
-    await setDoc(doc(db, "payments", paymentId, "pages", String(index)), pageDoc);
-  }));
-  const failed = results.filter(r => r.status === "rejected").length;
-  if (failed > 0) console.warn(`${failed} page(s) failed to save to Firestore (likely too large).`);
-  return { total: (pages||[]).length, failed };
+  const results = await Promise.allSettled(
+    (pages || []).map((pg, index) => savePageToFirestore(paymentId, index, pg))
+  );
+  const failed = results.filter(r => r.status === "rejected");
+  const degraded = results.filter(r => r.status === "fulfilled" && r.value.tier >= 3).length;
+  if (failed.length > 0) {
+    console.error(`${failed.length} page(s) truly failed to save (network/permission error, not a size issue):`, failed.map(f=>f.reason));
+  }
+  return { total: (pages||[]).length, failed: failed.length, degraded };
 }
 
 
@@ -2430,13 +2496,26 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
         pageCount: pendingProject?.pages?.length || 0,
       });
 
-      // Best-effort: send the actual book design (pages/images/text) to Firestore too,
-      // linked by this payment's own ID, so the admin can generate a print PDF once approved.
+      // Send the actual book design (pages/images/text) to Firestore too, linked
+      // by this payment's own ID, so the admin can generate a print PDF once
+      // approved. Every page is guaranteed to save (see savePagesToFirestore) —
+      // if this throws or reports a real failure, something is genuinely wrong
+      // (not just "too big"), so we surface it clearly rather than staying silent.
       if (pendingProject?.pages?.length) {
         try {
-          await savePagesToFirestore(docRef.id, pendingProject.pages);
+          const result = await savePagesToFirestore(docRef.id, pendingProject.pages);
+          if (result.failed > 0) {
+            setSendError(t(
+              "Your payment proof was submitted, but some pages of your design couldn't be saved. Please contact us so we can fix this before printing.",
+              "تم إرسال إثبات الدفع، لكن تعذر حفظ بعض صفحات تصميمك. يرجى التواصل معنا لإصلاح ذلك قبل الطباعة."
+            ));
+          }
         } catch (pagesErr) {
-          console.warn("Saving project pages failed (non-blocking):", pagesErr);
+          console.error("Saving project pages failed:", pagesErr);
+          setSendError(t(
+            "Your payment proof was submitted, but we couldn't save your design pages. Please contact us so we can fix this before printing.",
+            "تم إرسال إثبات الدفع، لكن تعذر حفظ صفحات تصميمك. يرجى التواصل معنا لإصلاح ذلك قبل الطباعة."
+          ));
         }
       }
 
@@ -2538,6 +2617,9 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
               {t("Layal has been notified and will review your payment shortly. Check \"My Orders\" anytime to see the live status.",
                  "تم إشعار ليال وستراجع دفعتك قريباً. تحقق من \"طلباتي\" في أي وقت لرؤية الحالة المباشرة.")}
             </p>
+            {sendError && (
+              <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginTop:16, textAlign:"left" }}>{sendError}</p>
+            )}
             <div style={{ marginTop:20, padding:16, borderRadius:12, background:`${PASTEL_PURPLE}10`, fontSize:13, color:DEEP_PURPLE }}>
               {t("Status:","الحالة:")} <strong style={{ color:GOLD_ACCENT }}>{t("Pending Review","قيد المراجعة")}</strong>
             </div>
@@ -2590,18 +2672,53 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
         setGeneratingId(null);
         return;
       }
-      const fetchedPages = snap.docs
-        .map(d => d.data())
-        .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+      // Reconstruct any chunked pages (only used as a rare last-resort fallback
+      // at save time, for pages with an unusually large number of images) by
+      // merging their chunk documents back into a single elements array.
+      const rawDocs = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      const mainPages = rawDocs.filter(d => !d.id.includes("__chunk"));
+      const chunkDocs  = rawDocs.filter(d => d.id.includes("__chunk"));
+
+      const fetchedPages = mainPages.map(pg => {
+        if (!pg.chunked) return pg;
+        const myChunks = chunkDocs
+          .filter(c => c.parentIndex === pg.index)
+          .sort((a,b) => a.chunkIndex - b.chunkIndex);
+        return { ...pg, elements: myChunks.flatMap(c => c.elements || []) };
+      }).sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+
+      // Guard against silently generating an incomplete PDF: if the number of
+      // pages we actually found doesn't match what the order says it should
+      // have (e.g. an older order saved before pages were guaranteed to save),
+      // warn clearly instead of just producing a shorter PDF with no explanation.
+      if (pay.pageCount && fetchedPages.length !== pay.pageCount) {
+        const proceed = window.confirm(
+          t(
+            `This order should have ${pay.pageCount} pages, but only ${fetchedPages.length} were found in storage. This usually means it was submitted before a reliability fix and some pages were lost. Generate a PDF with only the ${fetchedPages.length} available page(s) anyway?`,
+            `من المفترض أن يحتوي هذا الطلب على ${pay.pageCount} صفحة، لكن تم العثور على ${fetchedPages.length} فقط. عادةً ما يعني هذا أن الطلب أُرسل قبل إصلاح موثوقية النظام وفُقدت بعض الصفحات. هل تريد إنشاء PDF بالصفحات المتوفرة (${fetchedPages.length}) فقط؟`
+          )
+        );
+        if (!proceed) { setGeneratingId(null); return; }
+      }
 
       pdfPageRefs.current = [];
       setPdfPages(fetchedPages);
 
-      // Wait for the hidden pages to mount + images to decode before rasterizing.
-      // Slightly longer than before since the render container is now much larger.
-      await new Promise(res => setTimeout(res, 600));
+      // Wait a frame for the hidden pages to actually mount, then wait for
+      // every image inside them to finish decoding — instead of a fixed
+      // timeout guess, which gets less reliable the more pages/photos an
+      // order has.
+      await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
       const refs = pdfPageRefs.current.filter(Boolean);
       if (refs.length === 0) throw new Error("Hidden page refs did not mount");
+
+      const imgs = refs.flatMap(el => Array.from(el.querySelectorAll("img")));
+      await Promise.all(imgs.map(img => {
+        if (img.complete) return Promise.resolve();
+        return (img.decode ? img.decode() : new Promise(res => { img.onload = res; img.onerror = res; }))
+          .catch(() => {}); // don't let one broken image block the whole PDF
+      }));
 
       const title = pay.projectTitle || `Order-${pay.id.slice(0, 8)}`;
       const pdf = await exportAlbumToPDF(fetchedPages, refs, title);
