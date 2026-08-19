@@ -3036,6 +3036,7 @@ function DetailRow({ label, value, mono, link, copyKey, copiedField, onCopy }) {
 function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRTL, isMobile }) {
   // ── Local state (mirrors project, synced to parent on save) ──────────────
   const [pages,       setPages]       = useState(() => project.pages && project.pages.length ? project.pages : [{ id:generateId(), background:"#ffffff", elements:[] }]);
+  const [legacyFixBackup, setLegacyFixBackup] = useState(null); // pre-rescale snapshot, so "Fix Mobile Layout" can be undone
   const [currentPage, setCurrentPage] = useState(0);
   const [title,       setTitle]       = useState(project.title || "");
   const [occasion,    setOccasion]    = useState(project.occasion || "General");
@@ -3230,6 +3231,42 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const PAGE_W = 400, PAGE_H = 520;
   const canvasScale = isMobile ? Math.min(window.innerWidth - 32, 360) / PAGE_W : 1;
 
+  // One-time, undoable rescale for pages built before the mobile coordinate
+  // fix, where elements were saved relative to the phone's own dynamic canvas
+  // width instead of the fixed 400x520 space. This assumes the project is
+  // being fixed on the SAME phone it was originally built on — that's the only
+  // way to infer what the old (buggy) canvas width would have been. Applies to
+  // every element on every page, so best used once per project right after
+  // noticing a mismatch, not repeatedly.
+  const fixMobileLayout = () => {
+    const legacyW = Math.min(window.innerWidth - 32, 360);
+    if (legacyW === PAGE_W) {
+      alert(t("Nothing to fix — this device's canvas already matches the current layout size.","لا يوجد ما يجب إصلاحه — حجم الشاشة الحالي يطابق بالفعل حجم التخطيط."));
+      return;
+    }
+    const confirmed = window.confirm(t(
+      "This rescales every photo, sticker, and text box on every page of this project, to correct positions saved before a recent fix. It only works correctly if you're on the same phone this project was originally designed on. You can undo immediately after if it looks wrong. Continue?",
+      "سيؤدي هذا إلى إعادة تحجيم كل صورة وملصق ومربع نص في كل صفحة من هذا المشروع، لتصحيح المواضع المحفوظة قبل الإصلاح الأخير. يعمل بشكل صحيح فقط إذا كنت تستخدم نفس الهاتف الذي صُمم عليه المشروع أصلاً. يمكنك التراجع فوراً إذا بدت النتيجة غير صحيحة. متابعة؟"
+    ));
+    if (!confirmed) return;
+
+    const factor = PAGE_W / legacyW;
+    setLegacyFixBackup(pages);
+    setPages(prev => prev.map(pg => ({
+      ...pg,
+      elements: (pg.elements||[]).map(el => ({
+        ...el,
+        x: el.x * factor, y: el.y * factor, w: el.w * factor, h: el.h * factor,
+        ...(el.type === "text" ? { fontSize: Math.round((el.fontSize||18) * factor) } : {}),
+      })),
+    })));
+  };
+  const undoMobileLayoutFix = () => {
+    if (!legacyFixBackup) return;
+    setPages(legacyFixBackup);
+    setLegacyFixBackup(null);
+  };
+
   const onMouseDownEl = (e, elId) => {
     e.stopPropagation();
     setSelected(elId);
@@ -3398,6 +3435,11 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
               width:120, textAlign:"center", fontFamily:"'Quicksand',sans-serif", padding:"2px 4px" }} />
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             {lastSaved && <div style={{ width:7, height:7, borderRadius:"50%", background:"#27ae60" }} />}
+            <button onClick={fixMobileLayout} title={t("Fix layout from before a recent update","إصلاح التخطيط من قبل تحديث أخير")} style={{
+              background:"transparent", border:`1px solid ${PASTEL_PURPLE}30`,
+              borderRadius:8, padding:"6px 8px", fontSize:13, cursor:"pointer" }}>
+              🛠️
+            </button>
             <button onClick={doSave} style={{ background:`${PASTEL_PURPLE}20`, border:`1px solid ${PASTEL_PURPLE}40`,
               borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700, color:DEEP_PURPLE,
               cursor:"pointer", fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:4 }}>
@@ -3421,6 +3463,17 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             <span style={{ fontSize:16, flexShrink:0 }}>⚠️</span>
             <span style={{ fontSize:12, color:"#c0392b", lineHeight:1.5, flex:1 }}>{uploadError}</span>
             <button onClick={() => setUploadError(null)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:14, flexShrink:0 }}>✕</button>
+          </div>
+        )}
+
+        {/* Mobile layout fix — undo banner */}
+        {legacyFixBackup && (
+          <div style={{ position:"fixed", top:64, left:16, right:16, zIndex:70,
+            background:"#eaf6ee", border:"1px solid #a8dcb5", borderRadius:12, padding:"10px 14px",
+            display:"flex", alignItems:"center", gap:10, boxShadow:"0 4px 16px rgba(0,0,0,0.08)" }}>
+            <span style={{ fontSize:16, flexShrink:0 }}>✓</span>
+            <span style={{ fontSize:12, color:"#1e7a3d", lineHeight:1.5, flex:1 }}>{t("Layout rescaled. Check every page looks right before saving.","تمت إعادة تحجيم التخطيط. تحقق من كل صفحة قبل الحفظ.")}</span>
+            <button onClick={undoMobileLayoutFix} style={{ background:"white", border:"1px solid #a8dcb5", borderRadius:8, padding:"4px 10px", color:"#1e7a3d", cursor:"pointer", fontSize:11, fontWeight:700, flexShrink:0 }}>{t("Undo","تراجع")}</button>
           </div>
         )}
 
