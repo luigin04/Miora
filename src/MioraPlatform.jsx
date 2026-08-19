@@ -101,6 +101,17 @@ const STICKERS = [
   { id:"stk-018", src:"/stickers/sticker-dubai_atlantis_palm.png",         name:"Atlantis The Palm",      categories:["Dubai","UAE","Travel","Landmark","Hotel"] },
   { id:"stk-019", src:"/stickers/sticker-uae_desert_dunes.png",            name:"Desert Dunes",           categories:["Dubai","UAE","Travel","Desert"] },
   { id:"stk-020", src:"/stickers/sticker-dubai_postage_stamp_scene.png",   name:"Dubai Postage Stamp",    categories:["Dubai","UAE","Travel","Landmark","Stamp"] },
+  { id:"stk-021", src:"/stickers/sticker-burjkhalifa_teal.png",           name:"Burj Khalifa",           categories:["Dubai","UAE","Travel","Landmark"] },
+  { id:"stk-022", src:"/stickers/sticker-emirati_man_portrait_lineart.png", name:"Emirati Man Portrait",  categories:["Dubai","UAE","Travel","People","Culture"] },
+  { id:"stk-023", src:"/stickers/sticker-emirati_men_friendship_lineart.png", name:"Emirati Men Friendship", categories:["Dubai","UAE","Travel","People","Culture","Friendship"] },
+  { id:"stk-024", src:"/stickers/sticker-dubai_chocolate_piece.png",       name:"Dubai Chocolate (Piece)",categories:["Dubai","UAE","Food","Chocolate"] },
+  { id:"stk-025", src:"/stickers/sticker-uae_fireworks.png",               name:"UAE Fireworks",          categories:["Dubai","UAE","Travel","Celebrate","National Day"] },
+  { id:"stk-026", src:"/stickers/sticker-dubai_license_plate.png",         name:"Dubai License Plate",    categories:["Dubai","UAE","Travel","Car"] },
+  { id:"stk-027", src:"/stickers/sticker-dubai_chocolate_bar.png",         name:"Dubai Chocolate (Bar)",  categories:["Dubai","UAE","Food","Chocolate"] },
+  { id:"stk-028", src:"/stickers/sticker-uae_camel_sitting.png",           name:"Camel Sitting",          categories:["Dubai","UAE","Travel","Camel","Desert"] },
+  { id:"stk-029", src:"/stickers/sticker-uae_men_group_flags.png",         name:"UAE Men with Flags",     categories:["Dubai","UAE","Travel","People","Culture","Flag","National Day"] },
+  { id:"stk-030", src:"/stickers/sticker-uae_map_silhouette.png",          name:"UAE Map",                categories:["Dubai","UAE","Travel","Map"] },
+  { id:"stk-031", src:"/stickers/sticker-dubai_museum_of_future_teal.png", name:"Museum of the Future (Teal)", categories:["Dubai","UAE","Travel","Landmark","Architecture"] },
 ];
 
 // Every distinct category across STICKERS, computed once. "All" is prepended in the UI.
@@ -3525,12 +3536,12 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                       ))}
                     </div>
                     {filteredStickers.length > 0 ? (
-                      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+                      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12 }}>
                         {filteredStickers.map(s => (
                           <button key={s.id} onClick={() => { addSticker(s); closePanel(); }}
                             title={s.name}
                             style={{ background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}10`,
-                              borderRadius:10, padding:8, cursor:"pointer", aspectRatio:"1", display:"flex",
+                              borderRadius:12, padding:4, cursor:"pointer", aspectRatio:"1", display:"flex",
                               alignItems:"center", justifyContent:"center" }}>
                             <img src={s.src} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
                           </button>
@@ -3733,13 +3744,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   ))}
                 </div>
                 {filteredStickers.length > 0 ? (
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:6 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:10 }}>
                     {filteredStickers.map(s => (
                       <button key={s.id} onClick={() => addSticker(s)} title={s.name} style={{
                         background:`${SOFT_PINK}20`, border:`1px solid ${PASTEL_PURPLE}15`,
-                        borderRadius:8, padding:6, cursor:"pointer", transition:"transform 0.15s",
+                        borderRadius:10, padding:6, cursor:"pointer", transition:"transform 0.15s",
                         aspectRatio:"1", display:"flex", alignItems:"center", justifyContent:"center" }}
-                        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.1)"}
+                        onMouseEnter={e=>e.currentTarget.style.transform="scale(1.06)"}
                         onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
                         <img src={s.src} alt={s.name} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
                       </button>
