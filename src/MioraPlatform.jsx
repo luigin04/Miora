@@ -3170,11 +3170,40 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   };
 
   // ── Image upload ─────────────────────────────────────────────────────────
+  // Photos are re-encoded through canvas (same technique as compressImageFile)
+  // rather than passed through as raw file bytes. This matters especially on
+  // phones: iPhones save camera photos as HEIC by default, and a raw HEIC data
+  // URL frequently won't render through an <img> tag in a web page — it fails
+  // silently, with the element added to the page but nothing visible, which is
+  // exactly what "Add Photo does nothing" looks like from the outside.
+  // Re-encoding guarantees a browser-renderable JPEG regardless of source format.
+  const [uploadError, setUploadError] = useState(null);
+  useEffect(() => {
+    if (!uploadError) return;
+    const timer = setTimeout(() => setUploadError(null), 6000);
+    return () => clearTimeout(timer);
+  }, [uploadError]);
   const handleImageUpload = async e => {
     const files = Array.from(e.target.files);
+    setUploadError(null);
+    let failedCount = 0;
     for (const file of files) {
-      const b64 = await fileToBase64(file);   // ← base64 so it survives localStorage
-      addElement({ id:generateId(), type:"image", src:b64, x:40, y:40, w:200, h:150, rotation:0 });
+      try {
+        const jpeg = await compressImageFile(file, 1600, 0.85);
+        addElement({ id:generateId(), type:"image", src:jpeg, x:40, y:40, w:200, h:150, rotation:0 });
+      } catch (err) {
+        console.error("Photo failed to add:", file.name, err);
+        failedCount++;
+      }
+    }
+    if (failedCount > 0) {
+      setUploadError(
+        failedCount === files.length
+          ? t("Couldn't add that photo. Try a different one, or take a new photo instead of picking from a shared/HEIC file.",
+              "تعذر إضافة الصورة. جرّب صورة أخرى، أو التقط صورة جديدة بدلاً من اختيار ملف مشترك/HEIC.")
+          : t(`${failedCount} photo(s) couldn't be added. The others were added successfully.`,
+              `تعذر إضافة ${failedCount} صورة. تمت إضافة البقية بنجاح.`)
+      );
     }
     e.target.value = "";
   };
@@ -3377,6 +3406,17 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             </button>
           </div>
         </div>
+
+        {/* Upload error banner */}
+        {uploadError && (
+          <div style={{ position:"fixed", top:64, left:16, right:16, zIndex:70,
+            background:"#fdf0ef", border:"1px solid #f5b7b1", borderRadius:12, padding:"10px 14px",
+            display:"flex", alignItems:"center", gap:10, boxShadow:"0 4px 16px rgba(0,0,0,0.08)" }}>
+            <span style={{ fontSize:16, flexShrink:0 }}>⚠️</span>
+            <span style={{ fontSize:12, color:"#c0392b", lineHeight:1.5, flex:1 }}>{uploadError}</span>
+            <button onClick={() => setUploadError(null)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:14, flexShrink:0 }}>✕</button>
+          </div>
+        )}
 
         {/* Spread/single selector + page nav */}
         <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}10`,
@@ -3765,6 +3805,17 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           </button>
         </div>
       </div>
+
+      {/* Upload error banner */}
+      {uploadError && (
+        <div style={{ position:"fixed", top:60, left:"50%", transform:"translateX(-50%)", zIndex:70,
+          background:"#fdf0ef", border:"1px solid #f5b7b1", borderRadius:12, padding:"10px 16px",
+          display:"flex", alignItems:"center", gap:10, boxShadow:"0 4px 16px rgba(0,0,0,0.1)", maxWidth:480 }}>
+          <span style={{ fontSize:16, flexShrink:0 }}>⚠️</span>
+          <span style={{ fontSize:13, color:"#c0392b", lineHeight:1.5, flex:1 }}>{uploadError}</span>
+          <button onClick={() => setUploadError(null)} style={{ background:"none", border:"none", color:"#c0392b", cursor:"pointer", fontSize:14, flexShrink:0 }}>✕</button>
+        </div>
+      )}
 
       {/* ── Main layout ── */}
       <div style={{ display:"flex", flex:1, overflow:"hidden" }}>
