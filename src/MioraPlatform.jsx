@@ -112,6 +112,20 @@ const STICKERS = [
   { id:"stk-029", src:"/stickers/sticker-uae_men_group_flags.png",         name:"UAE Men with Flags",     categories:["Dubai","UAE","Travel","People","Culture","Flag","National Day"] },
   { id:"stk-030", src:"/stickers/sticker-uae_map_silhouette.png",          name:"UAE Map",                categories:["Dubai","UAE","Travel","Map"] },
   { id:"stk-031", src:"/stickers/sticker-dubai_museum_of_future_teal.png", name:"Museum of the Future (Teal)", categories:["Dubai","UAE","Travel","Landmark","Architecture"] },
+  { id:"stk-032", src:"/stickers/sticker-jerash_amphitheater.png",        name:"Jerash Amphitheater",     categories:["Jordan","Travel","Landmark","Jerash","History"] },
+  { id:"stk-033", src:"/stickers/sticker-jerash_columns_flat.png",        name:"Jerash Columns",          categories:["Jordan","Travel","Landmark","Jerash","History"] },
+  { id:"stk-034", src:"/stickers/sticker-jordan_camels_desert.png",       name:"Camels in the Desert",    categories:["Jordan","Travel","Camel","Desert"] },
+  { id:"stk-035", src:"/stickers/sticker-jordan_coffee_cup.png",         name:"Jordanian Coffee Cup",    categories:["Jordan","Travel","Food","Culture"] },
+  { id:"stk-036", src:"/stickers/sticker-jordan_embroidery_pattern.png", name:"Jordanian Embroidery",    categories:["Jordan","Travel","Culture","Pattern","Tatreez"] },
+  { id:"stk-037", src:"/stickers/sticker-jordan_flag_bunting.png",       name:"Jordan Flag Bunting",     categories:["Jordan","Travel","Flag","Celebrate"] },
+  { id:"stk-038", src:"/stickers/sticker-jordan_map_outline.png",        name:"Jordan Map",              categories:["Jordan","Travel","Map"] },
+  { id:"stk-039", src:"/stickers/sticker-jordan_royal_crest.png",        name:"Jordan Royal Crest",      categories:["Jordan","Travel","Culture","Emblem"] },
+  { id:"stk-040", src:"/stickers/sticker-jordanian_man_flag.png",        name:"Jordanian Man with Flag", categories:["Jordan","Travel","People","Culture","Flag"] },
+  { id:"stk-041", src:"/stickers/sticker-jordanian_woman_flag.png",      name:"Jordanian Woman with Flag", categories:["Jordan","Travel","People","Culture","Flag"] },
+  { id:"stk-042", src:"/stickers/sticker-petra_treasury_bold.png",       name:"Petra Treasury (Bold)",   categories:["Jordan","Travel","Landmark","Petra","History"] },
+  { id:"stk-043", src:"/stickers/sticker-petra_treasury_flat.png",       name:"Petra Treasury (Flat)",   categories:["Jordan","Travel","Landmark","Petra","History"] },
+  { id:"stk-044", src:"/stickers/sticker-petra_treasury_lineart.png",    name:"Petra Treasury (Line Art)", categories:["Jordan","Travel","Landmark","Petra","History"] },
+  { id:"stk-045", src:"/stickers/sticker-wadi_rum_canyon.png",          name:"Wadi Rum Canyon",         categories:["Jordan","Travel","Desert","Landmark","Wadi Rum"] },
 ];
 
 // Every distinct category across STICKERS, computed once. "All" is prepended in the UI.
