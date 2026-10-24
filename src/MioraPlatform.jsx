@@ -2,11 +2,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import emailjs from "@emailjs/browser";
 import { auth, db, ADMIN_EMAIL, signInWithGoogle, handleGoogleRedirectResult } from "./firebase";
 import {
-  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy, setDoc, getDocs,
+  collection, addDoc, query, where, onSnapshot, doc, updateDoc, orderBy, setDoc, getDocs, deleteDoc,
 } from "firebase/firestore";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
+import {
+  PAGE_W, PAGE_H, FONT_CSS_URL, pageStyle, elementBoxStyle, imageStyle, stickerBoxStyle,
+  stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf,
+} from "./pageRender";
+import { loadProjects, saveProjects, requestPersistentStorage } from "./projectStore";
 
 // ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
@@ -67,12 +71,6 @@ const OCCASIONS = [
   { name: "Anniversary", nameAr: "ذكرى سنوية",      emoji: "❤️" },
 ];
 
-const DEFAULT_REVIEWS = [
-  { id:"r1", name:"Sara A.",  rating:5, text:"The album for my wedding was absolutely stunning! Every page was beautifully designed.", nameAr:"سارة أ.",  textAr:"ألبوم زفافي كان رائعاً! كل صفحة كانت مصممة بشكل جميل.", date:"2026-04-12" },
-  { id:"r2", name:"Rania K.", rating:5, text:"I used the AI option and was blown away. It arranged 80 photos perfectly!", nameAr:"رانيا ك.", textAr:"استخدمت خيار الذكاء الاصطناعي وكانت النتيجة مذهلة!", date:"2026-03-28" },
-  { id:"r3", name:"Ahmad M.", rating:4, text:"Great quality and fast service. The preset templates saved me so much time.", nameAr:"أحمد م.", textAr:"جودة ممتازة وخدمة سريعة. القوالب الجاهزة وفرت لي الكثير من الوقت.", date:"2026-03-15" },
-  { id:"r4", name:"Lina T.",  rating:5, text:"My baby shower album is something I'll treasure forever. Thank you Miora!", nameAr:"لينا ت.",  textAr:"ألبوم استقبال المولود سأحتفظ به للأبد. شكراً ميورا!", date:"2026-02-20" },
-];
 
 // Sticker packs — pure emoji so no external assets needed
 // Image-based sticker library. Each entry points to a transparent-background PNG
@@ -180,7 +178,9 @@ const FONTS = [
   { name:"Markazi Text",     label:"Arabic Classic",    preview:"لحظات جميلة" },
 ];
 
-const FONT_LINK = "https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;500;600;700&family=Londrina+Solid:wght@400;900&family=Playfair+Display:wght@400;600;700&family=Dancing+Script:wght@400;600;700&family=Pacifico&family=Amatic+SC:wght@400;700&family=Caveat:wght@400;600;700&family=Lobster&family=Comfortaa:wght@300;400;700&family=Markazi+Text:wght@400;500&display=swap";
+// Single stylesheet for every font the editor offers (defined in pageRender.js
+// so the PDF renderer embeds exactly the same font files).
+const FONT_LINK = FONT_CSS_URL;
 
 // ─── localStorage helpers (lang/reviews/projects — purely local, not Firestore) ──
 function loadFromStorage(key, fallback) {
@@ -258,7 +258,11 @@ const FIRESTORE_DOC_SAFE_LIMIT = 850000;
 // This replaces a single fixed setting that could — and reliably did — produce
 // pages too large to save, which were then silently dropped with no error
 // shown to anyone. A page should now never go missing from a generated PDF.
+// The first tier stores photos exactly as uploaded (no recompression), so the
+// print matches what the customer saw whenever the page fits; heavier tiers are
+// only used for pages that would otherwise exceed Firestore's 1MB document cap.
 const COMPRESSION_TIERS = [
+  null, // original quality
   { maxWidth:1400, quality:0.85 },
   { maxWidth:1100, quality:0.75 },
   { maxWidth:900,  quality:0.65 },
@@ -275,6 +279,7 @@ function byteSizeOfJson(obj) {
 }
 
 async function compressPageElements(elements, tier) {
+  if (!tier) return elements || [];
   return Promise.all((elements || []).map(async el => {
     if (el.type === "image" && el.src) {
       try {
@@ -325,127 +330,30 @@ async function savePageToFirestore(paymentId, index, page) {
 // Serialize a finished album's pages to Firestore, one document per page (under
 // payments/{paymentId}/pages/{index}), so the admin can later fetch the full design
 // and generate a print-quality PDF without needing paid Firebase Storage.
-// Every page is guaranteed to save — see savePageToFirestore — so callers can
-// trust that `failed` staying 0 means nothing is missing. A non-zero `degraded`
-// count means some pages needed heavier compression than usual, which is safe
-// to ignore but useful for surfacing a heads-up if it happens a lot.
-async function savePagesToFirestore(paymentId, pages) {
-  const results = await Promise.allSettled(
-    (pages || []).map((pg, index) => savePageToFirestore(paymentId, index, pg))
-  );
+// Pages are processed a few at a time (not all at once) so large albums don't
+// exhaust a phone's memory mid-upload; `onProgress(done, total)` drives the
+// progress bar. A non-zero `degraded` count means some pages needed heavier
+// compression than usual to fit Firestore's per-document limit.
+const PAGE_UPLOAD_CONCURRENCY = 3;
+async function savePagesToFirestore(paymentId, pages, onProgress) {
+  const list = pages || [];
+  const results = [];
+  let done = 0;
+  for (let i = 0; i < list.length; i += PAGE_UPLOAD_CONCURRENCY) {
+    const batch = list.slice(i, i + PAGE_UPLOAD_CONCURRENCY);
+    const settled = await Promise.allSettled(batch.map((pg, k) => savePageToFirestore(paymentId, i + k, pg)));
+    results.push(...settled);
+    done += batch.length;
+    onProgress && onProgress(done, list.length);
+  }
   const failed = results.filter(r => r.status === "rejected");
-  const degraded = results.filter(r => r.status === "fulfilled" && r.value.tier >= 3).length;
+  const degraded = results.filter(r => r.status === "fulfilled" && r.value.tier >= 4).length;
   if (failed.length > 0) {
     console.error(`${failed.length} page(s) truly failed to save (network/permission error, not a size issue):`, failed.map(f=>f.reason));
   }
-  return { total: (pages||[]).length, failed: failed.length, degraded };
+  return { total: list.length, failed: failed.length, degraded };
 }
 
-
-// The size (in CSS px) that the hidden off-screen "raster layer" containers are
-// rendered at for PDF generation — a large jump from the 400x520 on-screen editor
-// preview, chosen to land close to true 300dpi print resolution on an A4 page
-// while staying light enough for a browser to rasterize page-by-page without
-// running out of memory. Kept as a named export so the admin renderer and the
-// PDF packer always agree on the same coordinate space.
-const PDF_RENDER_WIDTH  = 2000;
-const PDF_RENDER_HEIGHT = 2600; // same 400:520 aspect ratio as the editor canvas, scaled 5x
-const PDF_RENDER_SCALE  = PDF_RENDER_WIDTH / 400;
-
-function hexToRgb(hex) {
-  const clean = (hex || "#4A3068").replace("#", "");
-  const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
-  const num = parseInt(full, 16);
-  if (isNaN(num)) return [74, 48, 104];
-  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-}
-
-// Builds the final print PDF from two inputs per page:
-//   1. `rasterRefs[i]` — a DOM ref to a hidden, high-resolution container holding
-//      ONLY the background, photos, and stickers for that page (no text). This
-//      gets rasterized via html2canvas — the only place actual pixels are limited
-//      by source image resolution, which is unavoidable for photos.
-//   2. `pages[i].elements` — the original page data, used to draw every text
-//      element as REAL vector text directly into the PDF via jsPDF's text APIs.
-//      Vector text has no resolution ceiling at all — it's crisp at any zoom,
-//      completely free, and no longer limited by canvas/render resolution.
-// This split is what actually fixes blurry text/borders without needing any
-// paid storage — only photo detail is still capped by what's stored.
-async function exportAlbumToPDF(pages, rasterRefs, title = "Miora Album") {
-  // The album is designed at a 400:520 (≈10:13) ratio, not A4's ≈10:14.1 ratio.
-  // Using a generic "a4" format here was leaving the design shorter than the PDF
-  // page, which jsPDF then centered vertically — exactly the white bars seen in
-  // the exported file. Building a custom page size that matches the design's own
-  // ratio exactly means the artwork fills the page edge-to-edge with zero gaps.
-  // NOTE: 210mm width is a placeholder physical size — if the print supplier has
-  // a specific trim size (e.g. 20x20cm, 15x20cm), swap these two numbers for the
-  // real ones and the ratio math below still holds.
-  const PDF_PAGE_WIDTH_MM  = 210;
-  const PDF_PAGE_HEIGHT_MM = PDF_PAGE_WIDTH_MM * (PDF_RENDER_HEIGHT / PDF_RENDER_WIDTH);
-
-  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [PDF_PAGE_WIDTH_MM, PDF_PAGE_HEIGHT_MM] });
-  const pdfWidth  = pdf.internal.pageSize.getWidth();
-  const pdfHeight = pdf.internal.pageSize.getHeight();
-
-  for (let i = 0; i < pages.length; i++) {
-    const pg = pages[i];
-    const el = rasterRefs[i];
-    if (!el) continue;
-
-    // ── Raster layer: background + photos + stickers only ──────────────────
-    const canvas = await html2canvas(el, {
-      scale: 1,                   // native render size (PDF_RENDER_WIDTH/HEIGHT) is already high-res — no extra multiplier needed
-      useCORS: true,
-      backgroundColor: pg.background || "#ffffff",
-      logging: false,
-    });
-
-    const imgData   = canvas.toDataURL("image/jpeg", 0.95); // high-quality JPEG — PNG ballooned file size with no real benefit since photos are already lossy-compressed at the source
-    const imgWidth  = pdfWidth;
-    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
-
-    if (i > 0) pdf.addPage();
-
-    const yOffset = imgHeight < pdfHeight ? (pdfHeight - imgHeight) / 2 : 0;
-    pdf.addImage(imgData, "JPEG", 0, yOffset, imgWidth, imgHeight);
-
-    // px (render container) → mm (PDF page) conversion factor
-    const pxToMm = imgWidth / PDF_RENDER_WIDTH;
-
-    // ── Vector layer: real, crisp text drawn directly on top ────────────────
-    (pg.elements || []).filter(elm => elm.type === "text").forEach(te => {
-      const xPx = (te.x || 0) * PDF_RENDER_SCALE;
-      const yPx = (te.y || 0) * PDF_RENDER_SCALE;
-      const wPx = (te.w || 0) * PDF_RENDER_SCALE;
-      const hPx = (te.h || 0) * PDF_RENDER_SCALE;
-
-      const xMm = xPx * pxToMm;
-      const yMm = yOffset + (yPx * pxToMm);
-      const wMm = wPx * pxToMm;
-      const hMm = hPx * pxToMm;
-
-      const fontSizePx = (te.fontSize || 18) * PDF_RENDER_SCALE;
-      const fontSizePt = fontSizePx * pxToMm * 2.83465; // mm → pt
-
-      pdf.setFont("helvetica", te.bold ? "bold" : (te.italic ? "italic" : "normal"));
-      pdf.setFontSize(fontSizePt);
-      const [r, g, b] = hexToRgb(te.color);
-      pdf.setTextColor(r, g, b);
-
-      const lines = pdf.splitTextToSize(te.content || "", wMm);
-      const lineHeight = fontSizePt * 0.3528; // pt → mm line height approximation
-      const blockHeight = lines.length * lineHeight;
-      let cursorY = yMm + (hMm - blockHeight) / 2 + lineHeight * 0.8;
-      lines.forEach(line => {
-        pdf.text(line, xMm + wMm / 2, cursorY, { align: "center" });
-        cursorY += lineHeight;
-      });
-    });
-  }
-
-  pdf.setProperties({ title, creator: "Miora by Layal" });
-  return pdf;
-}
 const inputStyle = {
   width:"100%", padding:"12px 16px", borderRadius:12, fontSize:14,
   border:`1px solid ${PASTEL_PURPLE}30`, background:`${SOFT_PINK}15`,
@@ -469,6 +377,32 @@ const backBtnStyle = {
   fontFamily:"'Quicksand',sans-serif",
 };
 
+// ─── Shared page rendering ───────────────────────────────────────────────────
+// The editor (desktop + mobile) and the print PDF both render elements with
+// these components and the style functions in pageRender.js, so the printed
+// page is the same rendering as the page the customer designed.
+function ElementContent({ el }) {
+  if (el.type === "image") return <img src={el.src} alt="" draggable={false} style={imageStyle} />;
+  if (el.type === "sticker") return (
+    <div style={stickerBoxStyle(el)}>
+      {el.src ? <img src={el.src} alt="" draggable={false} style={stickerImageStyle} /> : el.content}
+    </div>
+  );
+  if (el.type === "text") return <div dir="auto" style={textStyle(el)}>{el.content}</div>;
+  return null;
+}
+
+// A page exactly as it prints: no selection outlines, labels or handles.
+function StaticPage({ page, pageRef }) {
+  return (
+    <div ref={pageRef} style={pageStyle(page)}>
+      {(page.elements || []).map((el, i) => (
+        <div key={el.id || i} style={elementBoxStyle(el)}><ElementContent el={el} /></div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Responsive hook ─────────────────────────────────────────────────────────
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
@@ -488,9 +422,13 @@ export default function MioraPlatform() {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [pendingProject,  setPendingProject]  = useState(null); // { pages, title, occasion } captured when customer finishes editing, sent to Firestore on payment submit
   const [reviewForm,      setReviewForm]      = useState({ name:"", rating:5, text:"" });
-  const [reviews,         setReviews]         = useState(DEFAULT_REVIEWS); // seeded with defaults, overwritten by Firestore
+  const [reviews,         setReviews]         = useState([]); // only real, admin-approved reviews from Firestore
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
-  const [projects,        setProjects]        = useState(() => loadFromStorage(STORAGE_KEYS.PROJECTS, []));
+  const [reviewError,     setReviewError]     = useState(null);
+  const [projects,        setProjects]        = useState([]); // loaded from IndexedDB on mount (see projectStore.js)
+  const [projectsLoaded,  setProjectsLoaded]  = useState(false);
+  const [saveStatus,      setSaveStatus]      = useState("idle"); // idle | saved | error — reflects the REAL storage write
+  const showSavedToast = useRef(false);
   const [scrollY,         setScrollY]         = useState(0);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const [saveToast,       setSaveToast]       = useState(null);
@@ -516,21 +454,46 @@ export default function MioraPlatform() {
     return unsub;
   }, []);
 
-  // ── Load reviews from Firestore in real time (shared across all visitors) ──
+  // ── Load approved reviews from Firestore in real time ─────────────────────
+  // New reviews are stored with approved:false and only appear after Layal
+  // approves them in the admin panel. Sorted client-side so no composite
+  // Firestore index is needed.
   useEffect(() => {
-    const q = query(collection(db, "reviews"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "reviews"), where("approved", "==", true));
     const unsub = onSnapshot(q, (snap) => {
-      if (snap.empty) return; // keep DEFAULT_REVIEWS showing until real ones exist
-      setReviews(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+      setReviews(list);
     }, (err) => {
-      console.warn("Reviews listener failed, using local fallback:", err);
+      console.warn("Reviews listener failed:", err);
     });
     return unsub;
   }, []);
 
   // ── Persist to localStorage (only plain data) ──────────────────────────────
   useEffect(() => saveToStorage(STORAGE_KEYS.LANG,     lang),     [lang]);
-  useEffect(() => saveToStorage(STORAGE_KEYS.PROJECTS, projects), [projects]);
+  useEffect(() => {
+    requestPersistentStorage();
+    loadProjects().then(stored => {
+      // Merge in case a project was created before loading finished.
+      setProjects(prev => [...prev, ...stored.filter(sp => !prev.some(p => p.id === sp.id))]);
+    }).catch(err => console.error("Loading projects failed:", err))
+      .finally(() => setProjectsLoaded(true));
+  }, []);
+  useEffect(() => {
+    if (!projectsLoaded) return; // never overwrite stored projects with the empty initial state
+    let cancelled = false;
+    saveProjects(projects).then(() => {
+      if (cancelled) return;
+      setSaveStatus("saved");
+      if (showSavedToast.current) { showSavedToast.current = false; setSaveToast(lang === "ar" ? "تم الحفظ ✓" : "Saved ✓"); }
+    }).catch(err => {
+      console.error("Saving projects failed:", err);
+      if (!cancelled) setSaveStatus("error");
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line
+  }, [projects, projectsLoaded]);
 
   useEffect(() => {
     const h = () => setScrollY(window.scrollY);
@@ -566,8 +529,8 @@ export default function MioraPlatform() {
         : p
       )
     );
-    setSaveToast(lang === "ar" ? "تم الحفظ ✓" : "Saved ✓");
-  }, [lang]);
+    showSavedToast.current = true; // shown once the storage write actually succeeds
+  }, []);
 
   const deleteProject = useCallback((projectId) => {
     setProjects(prev => prev.filter(p => p.id !== projectId));
@@ -646,7 +609,7 @@ export default function MioraPlatform() {
     return <BookEditorView mode={mode} project={project}
       onBack={() => { setActiveProjectId(null); setCurrentView("home"); }}
       onUpdate={updates => updateProject(pid, updates)}
-      onDone={handleEditorDone}
+      onDone={handleEditorDone} saveStatus={saveStatus}
       t={t} lang={lang} isRTL={isRTL} isMobile={isMobile} />;
   }
 
@@ -819,6 +782,11 @@ export default function MioraPlatform() {
       {/* Reviews */}
       <section id="reviews-section" style={{ padding:"80px 24px", background:WARM_WHITE, textAlign:"center" }}>
         <SectionTitle title={t("Customer Reviews","آراء العملاء")} subtitle={t("What our customers say","ماذا يقول عملاؤنا")} />
+        {reviews.length === 0 && (
+          <p style={{ fontSize:14, color:DARK_PURPLE, opacity:0.55, marginBottom:32 }}>
+            {t("No reviews yet — be the first to share your experience!","لا توجد تقييمات بعد — كن أول من يشارك تجربته!")}
+          </p>
+        )}
         <div style={{ display:"flex", flexWrap:"wrap", justifyContent:"center", gap:20, maxWidth:900, margin:"0 auto 40px" }}>
           {reviews.slice(0,8).map((r,i) => (
             <div key={r.id||i} style={{ background:"white", borderRadius:16, padding:24, flex:"1 1 240px", maxWidth:280,
@@ -855,26 +823,25 @@ export default function MioraPlatform() {
             <textarea placeholder={t("Share your experience...","شاركنا تجربتك...")}
               value={reviewForm.text} onChange={e => setReviewForm({...reviewForm,text:e.target.value})}
               rows={3} style={{ ...inputStyle, resize:"vertical", minHeight:80 }} dir={dir} />
+            {reviewError && <p style={{ fontSize:13, color:"#e74c3c", marginBottom:12, textAlign:"center" }}>{reviewError}</p>}
             <button onClick={async () => {
-              if (reviewForm.name && reviewForm.text) {
-                try {
-                  await addDoc(collection(db, "reviews"), {
-                    name: reviewForm.name,
-                    rating: reviewForm.rating,
-                    text: reviewForm.text,
-                    createdAt: new Date().toISOString(),
-                    date: new Date().toISOString().split("T")[0],
-                  });
-                  setReviewSubmitted(true);
-                  setReviewForm({ name:"", rating:5, text:"" });
-                } catch (err) {
-                  console.error("Review save failed:", err);
-                  // Fallback: show locally even if Firestore fails
-                  setReviews(prev => [{ id:generateId(), name:reviewForm.name, rating:reviewForm.rating,
-                    text:reviewForm.text, date:new Date().toISOString().split("T")[0] }, ...prev]);
-                  setReviewSubmitted(true);
-                  setReviewForm({ name:"", rating:5, text:"" });
-                }
+              const name = reviewForm.name.trim().slice(0, 60);
+              const text = reviewForm.text.trim().slice(0, 1000);
+              if (!name || !text) return;
+              setReviewError(null);
+              try {
+                await addDoc(collection(db, "reviews"), {
+                  name, text,
+                  rating: reviewForm.rating,
+                  approved: false, // shown publicly only after admin approval
+                  createdAt: new Date().toISOString(),
+                  date: new Date().toISOString().split("T")[0],
+                });
+                setReviewSubmitted(true);
+                setReviewForm({ name:"", rating:5, text:"" });
+              } catch (err) {
+                console.error("Review save failed:", err);
+                setReviewError(t("Couldn't send your review — please check your connection and try again.","تعذر إرسال تقييمك — يرجى التحقق من الاتصال والمحاولة مرة أخرى."));
               }
             }} style={primaryBtnStyle}>{t("Submit Review","أرسل التقييم")}</button>
           </div>
@@ -883,7 +850,7 @@ export default function MioraPlatform() {
             borderRadius:20, padding:40, textAlign:"center", border:`1px solid ${PASTEL_PURPLE}25` }}>
             <div style={{ marginBottom:12 }}><Icon name="heart" size={48} color={DEEP_PURPLE} strokeWidth={1} /></div>
             <div style={{ fontSize:18, fontWeight:700, color:DEEP_PURPLE, marginBottom:8 }}>{t("Thank you!","شكراً لك!")}</div>
-            <div style={{ fontSize:14, color:DARK_PURPLE, opacity:0.6 }}>{t("Your review has been saved.","تم حفظ تقييمك.")}</div>
+            <div style={{ fontSize:14, color:DARK_PURPLE, opacity:0.6 }}>{t("Your review was received and will appear here once it's approved.","تم استلام تقييمك وسيظهر هنا بعد الموافقة عليه.")}</div>
           </div>
         )}
       </section>
@@ -1585,15 +1552,25 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
     : null;
 
   // ── Photo upload handler ─────────────────────────────────────────────────
-  const handlePhotoUpload = (e) => {
-    const files = Array.from(e.target.files);
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setPhotos(prev => [...prev, ev.target.result]);
-      };
-      reader.readAsDataURL(file);
-    });
+  // Photos are re-encoded to JPEG exactly like the editor's "Add Photo" does:
+  // keeps project size manageable and makes iPhone HEIC photos display
+  // instead of silently showing up blank.
+  const [photoError, setPhotoError] = useState(null);
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    setPhotoError(null);
+    let failed = 0;
+    for (const file of files) {
+      try {
+        const jpeg = await compressImageFile(file, 1600, 0.85);
+        setPhotos(prev => [...prev, jpeg]);
+      } catch (err) {
+        console.error("Photo failed to load:", file.name, err);
+        failed++;
+      }
+    }
+    if (failed) setPhotoError(t(`${failed} photo(s) couldn't be read and were skipped.`, `تعذر قراءة ${failed} صورة وتم تخطيها.`));
   };
 
   // ── AI Layout Engine ─────────────────────────────────────────────────────
@@ -1667,7 +1644,8 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
 
     // Calculate how many pages we need
     const totalPhotos = shuffled.length;
-    const minPages = Math.max(30, totalPhotos + 4); // at least 30 pages
+    let minPages = Math.max(MIN_ALBUM_PAGES, totalPhotos + 4); // at least 30 pages
+    if (minPages % 2 !== 0) minPages++;                         // printed as two-page spreads
     const pages = [];
     let photoIdx = 0;
 
@@ -1741,8 +1719,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
           {t("Designing your album…","جاري تصميم ألبومك…")}
         </div>
         <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, textAlign:"center", maxWidth:300 }}>
-          {t(`Arranging ${photos.length} photos across ${Math.max(30, photos.length+4)} pages`,
-             `ترتيب ${photos.length} صورة على ${Math.max(30, photos.length+4)} صفحة`)}
+          {(() => { const n = Math.max(MIN_ALBUM_PAGES, photos.length + 4) + (Math.max(MIN_ALBUM_PAGES, photos.length + 4) % 2); return t(`Arranging ${photos.length} photos across ${n} pages`, `ترتيب ${photos.length} صورة على ${n} صفحة`); })()}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
@@ -1796,6 +1773,9 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
             </div>
             <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} style={{ display:"none" }} />
           </label>
+          {photoError && (
+            <div style={{ fontSize:12, color:"#b8860b", background:"#fffaf0", border:"1px solid #f5deb3", borderRadius:10, padding:10, marginTop:-12, marginBottom:20 }}>{photoError}</div>
+          )}
 
           {/* Photo count + preview strip */}
           {photos.length > 0 && (
@@ -1803,7 +1783,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
               <div style={{ fontSize:13, fontWeight:700, color:DARK_PURPLE, marginBottom:12 }}>
                 {photos.length} {t("photos added","صورة تمت إضافتها")}
                 <span style={{ fontSize:12, fontWeight:400, opacity:0.5, marginLeft:8 }}>
-                  → {Math.max(30, photos.length + 4)} {t("pages","صفحة")}
+                  → {Math.max(MIN_ALBUM_PAGES, photos.length + 4) + (Math.max(MIN_ALBUM_PAGES, photos.length + 4) % 2)} {t("pages","صفحة")}
                 </span>
               </div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -2486,6 +2466,7 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
   const [sending,   setSending]   = useState(false);
   const [sendError, setSendError] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null); // { done, total } while album pages upload
 
   const isSignedIn = authUser && !authUser.isAnonymous;
 
@@ -2528,7 +2509,9 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
       // (not just "too big"), so we surface it clearly rather than staying silent.
       if (pendingProject?.pages?.length) {
         try {
-          const result = await savePagesToFirestore(docRef.id, pendingProject.pages);
+          setUploadProgress({ done:0, total:pendingProject.pages.length });
+          const result = await savePagesToFirestore(docRef.id, pendingProject.pages,
+            (done, total) => setUploadProgress({ done, total }));
           if (result.failed > 0) {
             setSendError(t(
               "Your payment proof was submitted, but some pages of your design couldn't be saved. Please contact us so we can fix this before printing.",
@@ -2564,6 +2547,7 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
       ));
     } finally {
       setSending(false);
+      setUploadProgress(null);
     }
   };
 
@@ -2626,8 +2610,22 @@ function PaymentView({ selectedPackage, authUser, pendingProject, onBack, t, lan
               <p style={{ fontSize:13, color:"#b8860b", lineHeight:1.6, background:"#fffaf0", padding:12, borderRadius:12, border:"1px solid #f5deb3", marginBottom:16 }}>{sendError}</p>
             )}
             <button onClick={handleSubmit} disabled={!file || sending || !isSignedIn} style={{ ...primaryBtnStyle, opacity:(file && !sending && isSignedIn)?1:0.5, cursor:(file && !sending && isSignedIn)?"pointer":"not-allowed" }}>
-              {sending ? t("Submitting...","جاري الإرسال...") : t("Submit Payment Proof","إرسال إثبات الدفع")}
+              {sending
+                ? (uploadProgress
+                    ? t(`Uploading your album… page ${uploadProgress.done} of ${uploadProgress.total}`, `جاري رفع ألبومك… الصفحة ${uploadProgress.done} من ${uploadProgress.total}`)
+                    : t("Submitting...","جاري الإرسال..."))
+                : t("Submit Payment Proof","إرسال إثبات الدفع")}
             </button>
+            {sending && uploadProgress && (
+              <div style={{ marginTop:12 }}>
+                <div style={{ height:6, borderRadius:3, background:`${PASTEL_PURPLE}30`, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${Math.round(100*uploadProgress.done/Math.max(1,uploadProgress.total))}%`, background:DEEP_PURPLE, transition:"width 0.3s ease" }} />
+                </div>
+                <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.6, marginTop:6, textAlign:"center" }}>
+                  {t("Please keep this page open until the upload finishes.","يرجى إبقاء هذه الصفحة مفتوحة حتى يكتمل الرفع.")}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ background:"white", borderRadius:20, padding:40, textAlign:"center", border:`1px solid ${PASTEL_PURPLE}20` }}>
@@ -2670,7 +2668,10 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
   const [pdfPages,      setPdfPages]      = useState(null); // pages currently loaded into the hidden off-screen renderer
   const [generatingId,  setGeneratingId]  = useState(null); // payment id currently being turned into a PDF
   const [pdfError,      setPdfError]      = useState(null);
-  const pdfPageRefs = useRef([]); // DOM refs for the hidden off-screen pages, used by html2canvas
+  const [pdfProgress,   setPdfProgress]   = useState(null); // { done, total } while rendering pages
+  const pdfPageRefs = useRef([]); // DOM refs for the hidden off-screen pages that get snapshotted
+  const [adminTab,     setAdminTab]     = useState("orders"); // orders | reviews
+  const [adminReviews, setAdminReviews] = useState([]);
 
   const isAdmin = authUser && authUser.email === ADMIN_EMAIL;
 
@@ -2730,13 +2731,11 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
       pdfPageRefs.current = [];
       setPdfPages(fetchedPages);
 
-      // Wait a frame for the hidden pages to actually mount, then wait for
-      // every image inside them to finish decoding — instead of a fixed
-      // timeout guess, which gets less reliable the more pages/photos an
-      // order has.
+      // Wait a frame for the hidden pages to actually mount, then for every
+      // image inside them to decode.
       await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-      const refs = pdfPageRefs.current.filter(Boolean);
-      if (refs.length === 0) throw new Error("Hidden page refs did not mount");
+      const refs = fetchedPages.map((_, i) => pdfPageRefs.current[i]);
+      if (refs.some(r => !r)) throw new Error("Hidden pages did not mount");
 
       const imgs = refs.flatMap(el => Array.from(el.querySelectorAll("img")));
       await Promise.all(imgs.map(img => {
@@ -2745,15 +2744,24 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
           .catch(() => {}); // don't let one broken image block the whole PDF
       }));
 
+      // Each page is snapshotted by the browser itself (same layout engine,
+      // same font files as the editor) at print resolution — see pageRender.js.
       const title = pay.projectTitle || `Order-${pay.id.slice(0, 8)}`;
-      const pdf = await exportAlbumToPDF(fetchedPages, refs, title);
+      setPdfProgress({ done:0, total:fetchedPages.length });
+      const pdf = await exportPagesToPdf(jsPDF, fetchedPages, refs, {
+        title, onProgress: (done, total) => setPdfProgress({ done, total }),
+      });
       pdf.save(`${title.replace(/\s+/g, "-")}-print.pdf`);
     } catch (err) {
       console.error("Admin PDF generation failed:", err);
-      setPdfError(t("PDF generation failed. Please try again.","فشل إنشاء PDF. يرجى المحاولة مرة أخرى."));
+      setPdfError(t(
+        "PDF generation failed. Please check your connection and try again (Chrome on a computer works best).",
+        "فشل إنشاء PDF. يرجى التحقق من الاتصال والمحاولة مرة أخرى (يفضل استخدام Chrome على الكمبيوتر)."
+      ));
     } finally {
       setGeneratingId(null);
       setPdfPages(null);
+      setPdfProgress(null);
     }
   };
 
@@ -2766,6 +2774,28 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
     }, (err) => { console.error("Admin listener failed:", err); setLoadingPays(false); });
     return unsub;
   }, [isAdmin]);
+
+  // All reviews (approved and awaiting approval) for moderation.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const unsub = onSnapshot(collection(db, "reviews"), (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      list.sort((a,b) => (b.createdAt||"").localeCompare(a.createdAt||""));
+      setAdminReviews(list);
+    }, (err) => console.error("Admin reviews listener failed:", err));
+    return unsub;
+  }, [isAdmin]);
+
+  const setReviewApproved = async (id, approved) => {
+    try { await updateDoc(doc(db, "reviews", id), { approved }); }
+    catch (err) { console.error(err); alert(t("Failed to update review.","فشل تحديث التقييم.")); }
+  };
+  const removeReview = async (id) => {
+    if (!window.confirm(t("Delete this review permanently?","حذف هذا التقييم نهائياً؟"))) return;
+    try { await deleteDoc(doc(db, "reviews", id)); }
+    catch (err) { console.error(err); alert(t("Failed to delete review.","فشل حذف التقييم.")); }
+  };
+  const pendingReviewCount = adminReviews.filter(r => !r.approved).length;
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -2852,6 +2882,54 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
       </div>
 
       <div style={{ maxWidth:800, margin:"0 auto", padding:24 }}>
+        {/* Section switch: orders / reviews */}
+        <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+          {[["orders", t("Orders","الطلبات")], ["reviews", `${t("Reviews","التقييمات")}${pendingReviewCount ? ` (${pendingReviewCount} ${t("new","جديد")})` : ""}`]].map(([key, label]) => (
+            <button key={key} onClick={() => setAdminTab(key)} style={{
+              padding:"10px 18px", borderRadius:12, fontSize:14, fontWeight:700, cursor:"pointer",
+              border:"none", background: adminTab===key ? DEEP_PURPLE : `${PASTEL_PURPLE}20`,
+              color: adminTab===key ? "white" : DEEP_PURPLE, fontFamily:"'Quicksand',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {adminTab === "reviews" ? (
+          adminReviews.length === 0 ? (
+            <div style={{ textAlign:"center", padding:60, background:"white", borderRadius:20, border:`1px solid ${PASTEL_PURPLE}15`, opacity:0.7 }}>
+              {t("No reviews yet.","لا توجد تقييمات بعد.")}
+            </div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+              {adminReviews.map(r => (
+                <div key={r.id} style={{ background:"white", borderRadius:16, padding:18, border:`1px solid ${r.approved ? "#27ae6040" : `${GOLD_ACCENT}80`}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                    <div style={{ fontWeight:700 }}>{r.name} <span style={{ color:GOLD_ACCENT }}>{"★".repeat(r.rating||0)}</span></div>
+                    <div style={{ fontSize:11, fontWeight:700, padding:"4px 12px", borderRadius:10, color:"white", background: r.approved ? "#27ae60" : GOLD_ACCENT }}>
+                      {r.approved ? t("Live on site","منشور") : t("Awaiting approval","بانتظار الموافقة")}
+                    </div>
+                  </div>
+                  <p dir="auto" style={{ fontSize:14, lineHeight:1.6, margin:"10px 0", opacity:0.8, whiteSpace:"pre-wrap" }}>{r.text}</p>
+                  <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                    <span style={{ fontSize:12, opacity:0.45, flex:1 }}>{fmt(r.createdAt)}</span>
+                    {r.approved ? (
+                      <button onClick={() => setReviewApproved(r.id, false)} style={{ padding:"8px 14px", borderRadius:10, border:`1px solid ${PASTEL_PURPLE}40`, background:"white", color:DARK_PURPLE, fontWeight:600, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                        {t("Hide","إخفاء")}
+                      </button>
+                    ) : (
+                      <button onClick={() => setReviewApproved(r.id, true)} style={{ padding:"8px 14px", borderRadius:10, border:"none", background:"#27ae60", color:"white", fontWeight:700, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                        ✓ {t("Approve","موافقة")}
+                      </button>
+                    )}
+                    <button onClick={() => removeReview(r.id)} style={{ padding:"8px 14px", borderRadius:10, border:"none", background:"#e74c3c", color:"white", fontWeight:700, cursor:"pointer", fontFamily:"'Quicksand',sans-serif" }}>
+                      {t("Delete","حذف")}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (<>
         <div style={{ display:"flex", gap:8, marginBottom:24, flexWrap:"wrap" }}>
           {["pending","approved","rejected","all"].map(f => (
             <button key={f} onClick={() => setFilter(f)} style={{
@@ -2980,7 +3058,11 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
                             color:"white", cursor: generatingId === pay.id ? "not-allowed" : "pointer",
                             fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
                           <Icon name="pdf" size={16} color="white" />
-                          {generatingId === pay.id ? t("Generating print PDF...","جاري إنشاء PDF للطباعة...") : t("Generate Print-Ready PDF","إنشاء PDF جاهز للطباعة")}
+                          {generatingId === pay.id
+                            ? (pdfProgress
+                                ? t(`Rendering page ${pdfProgress.done} of ${pdfProgress.total}...`, `جاري معالجة الصفحة ${pdfProgress.done} من ${pdfProgress.total}...`)
+                                : t("Preparing print PDF...","جاري تجهيز PDF للطباعة..."))
+                            : t("Generate Print-Ready PDF","إنشاء PDF جاهز للطباعة")}
                         </button>
                         {pdfError && generatingId === null && (
                           <div style={{ fontSize:12, color:"#e74c3c", marginTop:8, textAlign:"center" }}>{pdfError}</div>
@@ -2993,27 +3075,16 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
             );})}
           </div>
         )}
+        </>)}
       </div>
 
-      {/* ── Hidden off-screen "raster layer": background + photos + stickers ONLY,
-          rendered at near-print resolution (PDF_RENDER_WIDTH/HEIGHT). Text is
-          intentionally excluded here — exportAlbumToPDF draws it separately as
-          real vector PDF text for maximum crispness at zero extra cost. ── */}
+      {/* ── Hidden off-screen copies of the order's pages, rendered with the exact
+          same component as the editor. Each one is snapshotted into the PDF. ── */}
       {pdfPages && (
-        <div style={{ position:"absolute", left:-9999, top:0, pointerEvents:"none", zIndex:-1 }}>
+        <div aria-hidden="true" style={{ position:"fixed", left:-100000, top:0, pointerEvents:"none" }}>
           {pdfPages.map((pg, i) => (
-            <div key={i} ref={el => { pdfPageRefs.current[i] = el; }}
-              style={{ width:PDF_RENDER_WIDTH, height:PDF_RENDER_HEIGHT, background:pg.background||"#ffffff", position:"relative", overflow:"hidden", marginBottom:8 }}>
-              {(pg.elements||[]).filter(el => el.type !== "text").map((el, ei) => (
-                <div key={el.id||ei} style={{
-                  position:"absolute",
-                  left:(el.x||0)*PDF_RENDER_SCALE, top:(el.y||0)*PDF_RENDER_SCALE,
-                  width:(el.w||0)*PDF_RENDER_SCALE, height:(el.h||0)*PDF_RENDER_SCALE,
-                  transform:`rotate(${el.rotation||0}deg)` }}>
-                  {el.type==="image" && <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block" }} />}
-                  {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min((el.w||0),(el.h||0))*PDF_RENDER_SCALE*0.7, lineHeight:1 }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain" }} /> : el.content}</div>}
-                </div>
-              ))}
+            <div key={i} style={{ marginBottom:8 }}>
+              <StaticPage page={pg} pageRef={el => { pdfPageRefs.current[i] = el; }} />
             </div>
           ))}
         </div>
@@ -3067,7 +3138,19 @@ function DetailRow({ label, value, mono, link, copyKey, copiedField, onCopy }) {
 
 // ─── Book Editor View ─────────────────────────────────────────────────────────
 // The full canvas editor: images, stickers, text, multi-page, auto-save
-function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRTL, isMobile }) {
+const MIN_ALBUM_PAGES = 30;
+
+// Pads an album with blank pages so it has at least MIN_ALBUM_PAGES and an even
+// page count (pages are printed and shown as two-page spreads).
+function padAlbumPages(pages) {
+  const out = [...pages];
+  while (out.length < MIN_ALBUM_PAGES || out.length % 2 !== 0) {
+    out.push({ id: generateId(), background:"#ffffff", elements:[] });
+  }
+  return out;
+}
+
+function BookEditorView({ mode, project, onBack, onUpdate, onDone, saveStatus, t, lang, isRTL, isMobile }) {
   // ── Local state (mirrors project, synced to parent on save) ──────────────
   const [pages,       setPages]       = useState(() => project.pages && project.pages.length ? project.pages : [{ id:generateId(), background:"#ffffff", elements:[] }]);
   const [legacyFixBackup, setLegacyFixBackup] = useState(null); // pre-rescale snapshot, so "Fix Mobile Layout" can be undone
@@ -3116,12 +3199,34 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   const page          = isMobile ? (pages[currentPage] || { id:"empty", background:"#ffffff", elements:[] }) : (activeSide === "left" ? leftPage : rightPage);
   const totalSpreads  = Math.ceil(pages.length / 2);
 
-  // ── Auto-save every 30 s ────────────────────────────────────────────────
+  // ── Auto-save: 1.5 s after the last change ──────────────────────────────
+  // (The old 30 s interval restarted on every edit, so a customer who kept
+  // editing could go a long time without anything being saved.)
+  const latestRef = useRef({ pages, title, occasion });
+  latestRef.current = { pages, title, occasion };
+  const onUpdateRef = useRef(onUpdate); // parent passes a new function every render
+  onUpdateRef.current = onUpdate;
+  const doSave = useCallback(() => {
+    onUpdateRef.current(latestRef.current);
+    setLastSaved(new Date());
+  }, []);
+  const isFirstRender = useRef(true);
   useEffect(() => {
-    autoSaveTimer.current = setInterval(() => doSave(), 30000);
-    return () => clearInterval(autoSaveTimer.current);
-  // eslint-disable-next-line
-  }, [pages, title, occasion]);
+    if (isFirstRender.current) { isFirstRender.current = false; return; } // nothing changed yet
+    autoSaveTimer.current = setTimeout(doSave, 1500);
+    return () => clearTimeout(autoSaveTimer.current);
+  }, [pages, title, occasion, doSave]);
+  // Phones often discard background tabs without warning — save the moment
+  // the page is hidden or closed.
+  useEffect(() => {
+    const flush = () => { if (document.visibilityState === "hidden") doSave(); };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", doSave);
+    return () => {
+      document.removeEventListener("visibilitychange", flush);
+      window.removeEventListener("pagehide", doSave);
+    };
+  }, [doSave]);
 
   // ── Keyboard: delete selected element ───────────────────────────────────
   useEffect(() => {
@@ -3133,11 +3238,26 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   // eslint-disable-next-line
-  }, [selected]);
+  }, [selected, activePageIdx]);
 
-  const doSave = () => {
-    onUpdate({ pages, title, occasion });
+  // Order: albums need at least MIN_ALBUM_PAGES pages and an even count.
+  const handleOrder = () => {
+    let finalPages = pages;
+    if (pages.length < MIN_ALBUM_PAGES || pages.length % 2 !== 0) {
+      const padded = padAlbumPages(pages);
+      const extra = padded.length - pages.length;
+      const ok = window.confirm(pages.length < MIN_ALBUM_PAGES
+        ? t(`Albums need at least ${MIN_ALBUM_PAGES} pages — yours has ${pages.length}. Add ${extra} blank page(s) and continue? You can go back and fill them in before paying.`,
+            `يجب أن يحتوي الألبوم على ${MIN_ALBUM_PAGES} صفحة على الأقل — ألبومك يحتوي على ${pages.length}. هل تريد إضافة ${extra} صفحة فارغة والمتابعة؟ يمكنك العودة وتعبئتها قبل الدفع.`)
+        : t("Albums print as two-page spreads, so one blank page will be added at the end. Continue?",
+            "تُطبع الألبومات كصفحتين متقابلتين، لذا ستتم إضافة صفحة فارغة في النهاية. متابعة؟"));
+      if (!ok) return;
+      finalPages = padded;
+      setPages(padded);
+    }
+    onUpdate({ pages: finalPages, title, occasion });
     setLastSaved(new Date());
+    onDone && onDone(finalPages);
   };
 
   const fmtTime = d => d ? d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
@@ -3167,33 +3287,36 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
     setSelected(null);
   };
   const updatePage = (idx, patch) => setPages(prev => prev.map((p,i) => i===idx ? {...p,...patch} : p));
-  const updateElements = (idx, elements) => updatePage(idx, { elements });
 
   // ── Element helpers ──────────────────────────────────────────────────────
+  // All of these transform the LATEST page state (functional setState) rather
+  // than a copy captured at render time — previously, deleting with the
+  // keyboard could silently revert other recent edits on the same page.
+  const editElements = (idx, fn) => setPages(prev => {
+    if (!prev[idx]) return prev; // e.g. an empty spread slot that has no page yet
+    return prev.map((p,i) => i===idx ? { ...p, elements: fn(p.elements || []) } : p);
+  });
   const addElement = el => {
-    const next = [...(page.elements||[]), el];
-    updateElements(activePageIdx, next);
+    editElements(activePageIdx, els => [...els, el]);
     setSelected(el.id);
   };
   const updateElement = (id, patch) => {
-    const next = (page.elements||[]).map(el => el.id===id ? {...el,...patch} : el);
-    updateElements(activePageIdx, next);
+    editElements(activePageIdx, els => els.map(el => el.id===id ? {...el,...patch} : el));
   };
   const removeElement = id => {
-    const next = (page.elements||[]).filter(el => el.id!==id);
-    updateElements(activePageIdx, next);
+    editElements(activePageIdx, els => els.filter(el => el.id!==id));
     setSelected(null);
   };
-  const bringForward = id => {
-    const els = [...(page.elements||[])];
-    const i = els.findIndex(e=>e.id===id);
-    if (i < els.length-1) { [els[i],els[i+1]]=[els[i+1],els[i]]; updateElements(activePageIdx,els); }
-  };
-  const sendBackward = id => {
-    const els = [...(page.elements||[])];
-    const i = els.findIndex(e=>e.id===id);
-    if (i > 0) { [els[i],els[i-1]]=[els[i-1],els[i]]; updateElements(activePageIdx,els); }
-  };
+  const bringForward = id => editElements(activePageIdx, list => {
+    const els = [...list]; const i = els.findIndex(e=>e.id===id);
+    if (i >= 0 && i < els.length-1) [els[i],els[i+1]]=[els[i+1],els[i]];
+    return els;
+  });
+  const sendBackward = id => editElements(activePageIdx, list => {
+    const els = [...list]; const i = els.findIndex(e=>e.id===id);
+    if (i > 0) [els[i],els[i-1]]=[els[i-1],els[i]];
+    return els;
+  });
 
   // ── Image upload ─────────────────────────────────────────────────────────
   // Photos are re-encoded through canvas (same technique as compressImageFile)
@@ -3255,14 +3378,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
   // ── Drag handling ─────────────────────────────────────────────────────────
   // All elements are always positioned/sized in this fixed 400x520 "logical"
   // coordinate space — matching desktop's page canvas AND what the PDF
-  // generator assumes (PDF_RENDER_SCALE = PDF_RENDER_WIDTH/400). On mobile the
+  // generator assumes (see pageRender.js). On mobile the
   // canvas is shown smaller to fit the phone screen, but purely as a visual
   // CSS scale-down; the underlying coordinates never change. Without this,
   // elements placed on mobile were stored relative to whatever width the
   // phone screen happened to be, which never matched the fixed space the PDF
   // renderer expects — producing exactly the stretched/misplaced content
   // reported when a mobile-built page was exported.
-  const PAGE_W = 400, PAGE_H = 520;
   const canvasScale = isMobile ? Math.min(window.innerWidth - 32, 360) / PAGE_W : 1;
 
   // One-time, undoable rescale for pages built before the mobile coordinate
@@ -3336,9 +3458,11 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
 
   // ── AI layout generator (algorithmic) ────────────────────────────────────
   const runAI = async () => {
-    const allImages = pages.flatMap(pg => pg.elements.filter(el => el.type==="image"));
+    // Covers (pages 0 and 1) are kept as-is; only interior photos are re-laid out.
+    const coverPages = pages.slice(0, 2);
+    const allImages = pages.slice(2).flatMap(pg => (pg.elements||[]).filter(el => el.type==="image"));
     if (allImages.length === 0) {
-      alert(t("Please upload some photos first!","يرجى رفع بعض الصور أولاً!"));
+      alert(t("Please add some photos to the inside pages first!","يرجى إضافة بعض الصور إلى الصفحات الداخلية أولاً!"));
       return;
     }
     setAiRunning(true);
@@ -3383,12 +3507,13 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
       };
     });
 
-    setPages(newPages);
+    const albumPages = padAlbumPages([...coverPages, ...newPages]);
+    setPages(albumPages);
     setCurrentPage(0);
     setSelected(null);
     setAiRunning(false);
     setAiDone(true);
-    onUpdate({ pages:newPages, title, occasion });
+    onUpdate({ pages:albumPages, title, occasion });
   };
 
   // ── Template layouts ──────────────────────────────────────────────────────
@@ -3424,6 +3549,14 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
 
   const selEl = (page.elements||[]).find(e => e.id===selected);
 
+  const saveErrorBanner = saveStatus === "error" ? (
+    <div role="alert" style={{ position:"fixed", top:0, left:0, right:0, zIndex:500, background:"#e74c3c", color:"white",
+      padding:"10px 16px", fontSize:13, fontWeight:600, textAlign:"center", fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif" }}>
+      ⚠️ {t("Your latest changes could NOT be saved — this device's browser storage is full. Free up space, then tap Save.",
+            "تعذر حفظ آخر تغييراتك — مساحة تخزين المتصفح على هذا الجهاز ممتلئة. أفرغ بعض المساحة ثم اضغط حفظ.")}
+    </div>
+  ) : null;
+
   // ── Mode config ───────────────────────────────────────────────────────────
   const modeConfig = {
     manual:   { color:DEEP_PURPLE, icon:"✏️", label:t("Manual Editor","المحرر اليدوي") },
@@ -3453,6 +3586,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
         fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:"#f4f0fb",
         userSelect:"none", position:"relative" }}>
         <link href={FONT_LINK} rel="stylesheet" />
+        {saveErrorBanner}
 
         {/* Mobile top bar */}
         <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}15`, padding:"10px 16px",
@@ -3468,7 +3602,9 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
               fontSize:13, fontWeight:600, color:DARK_PURPLE, background:"transparent",
               width:120, textAlign:"center", fontFamily:"'Quicksand',sans-serif", padding:"2px 4px" }} />
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            {lastSaved && <div style={{ width:7, height:7, borderRadius:"50%", background:"#27ae60" }} />}
+            {saveStatus === "error"
+              ? <span title={t("Not saved — device storage full","لم يتم الحفظ — مساحة الجهاز ممتلئة")} style={{ fontSize:13 }}>⚠️</span>
+              : lastSaved && <div style={{ width:7, height:7, borderRadius:"50%", background:"#27ae60" }} />}
             <button onClick={fixMobileLayout} title={t("Fix layout from before a recent update","إصلاح التخطيط من قبل تحديث أخير")} style={{
               background:"transparent", border:`1px solid ${PASTEL_PURPLE}30`,
               borderRadius:8, padding:"6px 8px", fontSize:13, cursor:"pointer" }}>
@@ -3479,7 +3615,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
               cursor:"pointer", fontFamily:"'Quicksand',sans-serif", display:"flex", alignItems:"center", gap:4 }}>
               <Icon name="save" size={14} color={DEEP_PURPLE} />
             </button>
-            <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
+            <button onClick={handleOrder} style={{
               background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
               border:"none", borderRadius:8, padding:"6px 12px", fontSize:11, fontWeight:700,
               color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
@@ -3545,7 +3681,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             {/* Fixed 400x520 logical canvas — every element's x/y/w/h is stored
                 relative to THIS space, matching desktop and the PDF generator.
                 Scaled down purely for display on a narrow phone screen. */}
-            <div data-canvas="true" style={{ width:PAGE_W, height:PAGE_H, position:"absolute", top:0, left:0,
+            <div data-canvas="true" style={{ ...pageStyle(mobilePage), position:"absolute", top:0, left:0,
               transform:`scale(${canvasScale})`, transformOrigin:"top left" }}>
 
             {(mobilePage.elements||[]).map(el => (
@@ -3590,40 +3726,17 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   updateElement(el.id, { x:dragging.origX+dx, y:dragging.origY+dy });
                 }}
                 onTouchEnd={e => { e.stopPropagation(); setDragging(null); setPinch(null); }}
-                style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
-                  transform:`rotate(${el.rotation||0}deg)`, userSelect:"none",
+                style={{ ...elementBoxStyle(el),
                   outline: selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
                   outlineOffset:2, touchAction:"none" }}>
 
-                {el.type==="image" && (
-                  <img src={el.src} alt="" draggable={false}
-                    style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />
-                )}
-                {el.type==="sticker" && (
-                  <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>
-                    {el.src ? <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}
-                  </div>
-                )}
-                {el.type==="text" && (
-                  selected===el.id ? (
-                    <textarea autoFocus value={el.content}
-                      onChange={e => updateElement(el.id,{content:e.target.value})}
-                      onMouseDown={e => e.stopPropagation()}
-                      onTouchStart={e => e.stopPropagation()}
-                      style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
-                        fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                        color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                        cursor:"text", textAlign:"center", padding:4 }} />
-                  ) : (
-                    <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                      fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                      color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                      textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
-                      {el.content}
-                    </div>
-                  )
-                )}
+                {el.type==="text" && selected===el.id ? (
+                  <textarea autoFocus dir="auto" value={el.content}
+                    onChange={e => updateElement(el.id,{content:e.target.value})}
+                    onMouseDown={e => e.stopPropagation()}
+                    onTouchStart={e => e.stopPropagation()}
+                    style={textEditorStyle(el)} />
+                ) : <ElementContent el={el} />}
                 {selected===el.id && (
                   <div
                     onMouseDown={e => onResizeMouseDown(e, el.id)}
@@ -3869,6 +3982,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
     <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", display:"flex", flexDirection:"column",
       fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE, background:"#f4f0fb", userSelect:"none" }}>
       <link href={FONT_LINK} rel="stylesheet" />
+        {saveErrorBanner}
 
       {/* ── Top bar ── */}
       <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`, padding:"8px 16px",
@@ -3885,7 +3999,12 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
           <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t("Album title...","عنوان الألبوم...")}
             style={{ border:"none", borderBottom:`1px solid ${PASTEL_PURPLE}40`, outline:"none", fontSize:13, fontWeight:600,
               color:DARK_PURPLE, background:"transparent", padding:"2px 8px", width:160, fontFamily:"'Quicksand',sans-serif" }} />
-          {lastSaved && (
+          {saveStatus === "error" ? (
+            <div title={t("Your browser refused to store this project. Free up space on this device, then press Save again.","رفض المتصفح حفظ هذا المشروع. أفرغ بعض المساحة على جهازك ثم اضغط حفظ مرة أخرى.")}
+              style={{ fontSize:11, color:"#e74c3c", fontWeight:700, display:"flex", alignItems:"center", gap:4 }}>
+              ⚠️ {t("Not saved — device storage full","لم يتم الحفظ — مساحة الجهاز ممتلئة")}
+            </div>
+          ) : lastSaved && (
             <div style={{ fontSize:11, color:DARK_PURPLE, opacity:0.4, display:"flex", alignItems:"center", gap:4 }}>
               <span style={{ width:6, height:6, borderRadius:"50%", background:"#27ae60", display:"inline-block" }} />
               {t("Saved","محفوظ")} {fmtTime(lastSaved)}
@@ -3896,7 +4015,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
             display:"flex", alignItems:"center", gap:6 }}>
             <Icon name="save" size={14} color={DEEP_PURPLE} /> {t("Save","احفظ")}
           </button>
-          <button onClick={() => { doSave(); onDone && onDone(pages); }} style={{
+          <button onClick={handleOrder} style={{
             background:`linear-gradient(135deg,${GOLD_ACCENT},#c08020)`,
             border:"none", borderRadius:10, padding:"6px 18px", fontSize:12, fontWeight:700,
             color:"white", cursor:"pointer", fontFamily:"'Quicksand',sans-serif",
@@ -4171,9 +4290,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   setActiveSide("left");
                   if (e.target.dataset.canvas) setSelected(null);
                 }}
-                style={{ width:400, height:520,
-                  background: leftPage.background||"#ffffff",
-                  position:"relative", overflow:"hidden",
+                style={{ ...pageStyle(leftPage),
                   borderRadius:"6px 0 0 6px",
                   outline: activeSide==="left" ? `3px solid ${DEEP_PURPLE}` : "none",
                   cursor:"default",
@@ -4182,29 +4299,14 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 {(leftPage.elements||[]).map(el => (
                   <div key={el.id}
                     onMouseDown={e => { setActiveSide("left"); onMouseDownEl(e, el.id); }}
-                    style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
-                      transform:`rotate(${el.rotation||0}deg)`, cursor:"move", userSelect:"none",
+                    style={{ ...elementBoxStyle(el), cursor:"move",
                       outline: activeSide==="left" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
                       outlineOffset:2 }}>
-                    {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
-                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}</div>}
-                    {el.type==="text" && (
-                      activeSide==="left" && selected===el.id ? (
-                        <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
-                          onMouseDown={e => e.stopPropagation()}
-                          style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
-                            fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                            color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                            cursor:"text", textAlign:"center", padding:4 }} />
-                      ) : (
-                        <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                          fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                          color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                          textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
-                          {el.content}
-                        </div>
-                      )
-                    )}
+                    {el.type==="text" && activeSide==="left" && selected===el.id ? (
+                      <textarea autoFocus dir="auto" value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
+                        onMouseDown={e => e.stopPropagation()}
+                        style={textEditorStyle(el)} />
+                    ) : <ElementContent el={el} />}
                     {activeSide==="left" && selected===el.id && (
                       <div onMouseDown={e => onResizeMouseDown(e, el.id)}
                         style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%", background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
@@ -4238,9 +4340,7 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                   setActiveSide("right");
                   if (e.target.dataset.canvas) setSelected(null);
                 }}
-                style={{ width:400, height:520,
-                  background: rightPage.background||"#ffffff",
-                  position:"relative", overflow:"hidden",
+                style={{ ...pageStyle(rightPage),
                   borderRadius:"0 6px 6px 0",
                   outline: activeSide==="right" ? `3px solid ${DEEP_PURPLE}` : "none",
                   cursor:"default",
@@ -4249,29 +4349,14 @@ function BookEditorView({ mode, project, onBack, onUpdate, onDone, t, lang, isRT
                 {(rightPage.elements||[]).map(el => (
                   <div key={el.id}
                     onMouseDown={e => { setActiveSide("right"); onMouseDownEl(e, el.id); }}
-                    style={{ position:"absolute", left:el.x, top:el.y, width:el.w, height:el.h,
-                      transform:`rotate(${el.rotation||0}deg)`, cursor:"move", userSelect:"none",
+                    style={{ ...elementBoxStyle(el), cursor:"move",
                       outline: activeSide==="right" && selected===el.id ? `2px solid ${DEEP_PURPLE}` : "none",
                       outlineOffset:2 }}>
-                    {el.type==="image" && <img src={el.src} alt="" draggable={false} style={{ width:"100%", height:"100%", objectFit:"cover", borderRadius:2, display:"block", pointerEvents:"none" }} />}
-                    {el.type==="sticker" && <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:Math.min(el.w,el.h)*0.7, lineHeight:1, pointerEvents:"none" }}>{el.src ? <img src={el.src} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", pointerEvents:"none" }} /> : el.content}</div>}
-                    {el.type==="text" && (
-                      activeSide==="right" && selected===el.id ? (
-                        <textarea autoFocus value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
-                          onMouseDown={e => e.stopPropagation()}
-                          style={{ width:"100%", height:"100%", border:"none", background:"transparent", outline:"none", resize:"none",
-                            fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                            color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                            cursor:"text", textAlign:"center", padding:4 }} />
-                      ) : (
-                        <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center",
-                          fontFamily:`'${el.font||"Quicksand"}',sans-serif`, fontSize:el.fontSize||18,
-                          color:el.color||DARK_PURPLE, fontWeight:el.bold?"bold":"normal", fontStyle:el.italic?"italic":"normal",
-                          textAlign:"center", padding:4, wordBreak:"break-word", pointerEvents:"none", whiteSpace:"pre-wrap" }}>
-                          {el.content}
-                        </div>
-                      )
-                    )}
+                    {el.type==="text" && activeSide==="right" && selected===el.id ? (
+                      <textarea autoFocus dir="auto" value={el.content} onChange={e => updateElement(el.id,{content:e.target.value})}
+                        onMouseDown={e => e.stopPropagation()}
+                        style={textEditorStyle(el)} />
+                    ) : <ElementContent el={el} />}
                     {activeSide==="right" && selected===el.id && (
                       <div onMouseDown={e => onResizeMouseDown(e, el.id)}
                         style={{ position:"absolute", right:-5, bottom:-5, width:14, height:14, borderRadius:"50%", background:DEEP_PURPLE, cursor:"se-resize", border:"2px solid white", zIndex:10 }} />
