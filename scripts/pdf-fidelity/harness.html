@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>*{margin:0;padding:0;box-sizing:border-box}</style>
+<link rel="stylesheet" href="/fonts.css">
+<script src="/jspdf.umd.min.js"></script>
+</head>
+<!-- dir="rtl" on purpose: the page must render the same inside an Arabic UI -->
+<body dir="rtl" style="font-family:serif;text-align:center;color:red;line-height:3">
+<div id="host"></div>
+<script type="module">
+import * as R from "/pageRender.js";
+
+// Mirrors how React turns a style object into DOM styles.
+const UNITLESS = new Set(["lineHeight","fontWeight","opacity","zIndex","flex"]);
+function applyStyle(node, obj) {
+  for (const [k, v] of Object.entries(obj)) node.style[k] = (typeof v === "number" && !UNITLESS.has(k)) ? v + "px" : v;
+}
+function h(tag, style, attrs = {}, children = []) {
+  const n = document.createElement(tag);
+  if (style) applyStyle(n, style);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  for (const c of [].concat(children)) n.append(c);
+  return n;
+}
+// Mirrors <ElementContent/> and <StaticPage/> in MioraPlatform.jsx.
+function elementContent(el) {
+  if (el.type === "image") return h("img", R.imageStyle, { src: el.src, alt: "", draggable: "false" });
+  if (el.type === "sticker") return h("div", R.stickerBoxStyle(el), {}, el.src ? h("img", R.stickerImageStyle, { src: el.src, alt: "", draggable: "false" }) : el.content);
+  if (el.type === "text") return h("div", R.textStyle(el), { dir: "auto" }, el.content);
+}
+function staticPage(page) {
+  return h("div", R.pageStyle(page), { "data-page": "1" }, (page.elements || []).map(el => h("div", R.elementBoxStyle(el), {}, elementContent(el))));
+}
+
+window.runTest = async function (pages) {
+  const host = document.getElementById("host");
+  const nodes = pages.map(p => { const n = staticPage(p); const wrap = h("div", { marginBottom: 20 }, {}, n); host.append(wrap); return n; });
+  await document.fonts.ready;
+  await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
+  const rasters = [];
+  for (let i = 0; i < pages.length; i++) {
+    const c = await R.rasterizePage(nodes[i], { background: pages[i].background, fontFamilies: R.fontsUsedByPage(pages[i]), fontCssUrl: location.origin + "/fonts.css" });
+    rasters.push(c.toDataURL("image/png"));
+  }
+  const pdf = await R.exportPagesToPdf(window.jspdf.jsPDF, pages, nodes, { title: "test", fontCssUrl: location.origin + "/fonts.css" });
+  return { rasters, pdf: pdf.output("datauristring") };
+};
+window.harnessReady = true;
+</script>
+</body></html>
