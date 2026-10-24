@@ -1,182 +1,92 @@
-# Miora by Layal - Photo Album Creator Platform
+# Miora by Layal — Photo Album Platform
 
-A beautiful, bilingual (Arabic/English) photo album creation platform with drag-and-drop design, AI-powered layouts, and preset templates.
+A bilingual (English / Arabic) website where customers design a printed photo
+album, pay via CliQ, and Layal reviews orders and downloads a print-ready PDF.
 
-## Features
+## How it works
 
-✨ **Three Creation Modes:**
-- Manual Design: Full drag-and-drop editor with stickers, text, and decorations
-- AI-Powered: Upload photos and let AI automatically arrange them
-- Templates: Choose from pre-designed album layouts
+1. **Design** — three ways to start an album:
+   - **Manual**: drag-and-drop editor with photos, stickers and text.
+   - **"AI"**: upload photos and the site lays them out automatically across
+     at least 30 pages (a rule-based layout engine — no external AI service).
+   - **Templates**: start from one of the illustrated cover designs.
+2. **Order** — albums need at least 30 pages (printed as two-page spreads, so
+   always an even number). The price tier is picked from the page count.
+3. **Pay** — the customer signs in with Google, pays via CliQ to `Miora.Layal`
+   and uploads a screenshot of the confirmation.
+4. **Review** — Layal gets an email (EmailJS), then approves or rejects the
+   order in the admin panel (`/#admin`). Approved orders get a
+   **Generate Print-Ready PDF** button.
 
-🌍 **Bilingual Support:** Full Arabic and English support with RTL layout
+## Where data lives
 
-💾 **Auto-Save:** Projects saved locally in browser storage (localStorage)
+| Data | Stored in |
+|---|---|
+| Album projects while designing | The customer's browser — **IndexedDB** (`src/projectStore.js`). Not synced across devices. |
+| Language choice | Browser localStorage |
+| Orders + payment screenshot | Firestore `payments/{id}` |
+| Album pages of an order | Firestore `payments/{id}/pages/{index}` (one document per page) |
+| Reviews | Firestore `reviews` — shown publicly only after Layal approves them |
 
-💳 **Payment Integration:** CliQ payment system with proof upload for owner verification
+Photos are stored inside Firestore documents (no paid Firebase Storage). Each
+page is saved at full quality when it fits Firestore's 1 MB-per-document limit;
+pages with many photos are compressed just enough to fit.
 
-⭐ **Reviews:** Customer testimonials with 5-star ratings
+## Print PDF
 
-📱 **Responsive Design:** Works seamlessly on desktop, tablet, and mobile
+`src/pageRender.js` is the single source of truth for how a page looks. The
+editor and the PDF use the same components and styles, and each PDF page is a
+snapshot taken by the browser's own rendering engine (with the same Google
+Fonts files embedded), so the PDF matches the design: same fonts, Arabic
+shaping, rotation, photo cropping and stickers.
 
-## Quick Start
+- Page size: 210 × 273 mm (the 400:520 design ratio, full bleed). To match a
+  printer's trim size, change `PDF_PAGE_WIDTH_MM` in `src/pageRender.js`.
+- Resolution: 2400 × 3120 px per page (≈290 dpi).
+- Photo detail is limited by the stored photo itself (uploads are kept at up to
+  1600 px wide). Truly 300 dpi full-page photos would need Firebase Storage.
+- Generate PDFs in **Chrome on a computer** for best reliability.
 
-### Prerequisites
-- Node.js (v14 or higher)
-- npm or yarn
+`scripts/pdf-fidelity/` contains a test that renders sample pages (Arabic,
+custom fonts, rotation, stickers, cropped photos) in headless Chromium and
+compares the browser's on-screen rendering against the PDF pixel by pixel.
 
-### Installation
+## Security
+
+`firestore.rules` holds the database security rules: customers can only
+create and read their own orders, only the admin can approve orders or read
+everyone's data, and reviews stay hidden until approved. **These rules must be
+deployed** — from the Firebase console (Firestore Database → Rules → paste →
+Publish) or with `firebase deploy --only firestore:rules`.
+
+## Development
 
 ```bash
-# Clone or extract the repository
-cd netlify-deploy
-
-# Install dependencies
 npm install
-
-# Start development server
-npm start
+npm start        # http://localhost:3000
+npm run build    # production build in build/
 ```
 
-The app will open at `http://localhost:3000`
+Deployed on Netlify (`netlify.toml`): build command `npm run build`, publish
+directory `build`. Pushing to the connected GitHub branch deploys automatically.
 
-### Build for Production
-
-```bash
-npm run build
-```
-
-This creates an optimized build in the `build/` folder.
-
-## Deployment to Netlify
-
-### Option 1: Using Netlify CLI
-
-```bash
-# Install Netlify CLI globally
-npm install -g netlify-cli
-
-# Login to your Netlify account
-netlify login
-
-# Deploy the site
-netlify deploy --prod
-```
-
-### Option 2: Connect GitHub Repository
-
-1. Push this folder to a GitHub repository
-2. Go to [netlify.com](https://netlify.com)
-3. Click "New site from Git"
-4. Connect your GitHub account and select the repository
-5. Configure build settings:
-   - Build command: `npm run build`
-   - Publish directory: `build`
-6. Click "Deploy site"
-
-### Option 3: Drag & Drop Deploy
-
-1. Run `npm run build` locally
-2. Go to [netlify.com](https://netlify.com)
-3. Drag and drop the `build/` folder onto the Netlify interface
-
-## Project Structure
+## Project structure
 
 ```
-netlify-deploy/
-├── public/
-│   └── index.html          # HTML entry point
-├── src/
-│   ├── index.js            # React initialization
-│   ├── App.js              # App wrapper
-│   └── MioraPlatform.jsx    # Main platform component
-├── netlify.toml            # Netlify configuration
-├── package.json            # Dependencies and scripts
-├── .gitignore              # Git ignore rules
-└── README.md               # This file
+public/
+  books/        cover images used by templates and the homepage
+  stickers/     transparent PNG sticker library
+src/
+  MioraPlatform.jsx   the whole app (views, editor, payment, admin)
+  pageRender.js       shared page rendering + print PDF export
+  projectStore.js     IndexedDB storage for in-progress projects
+  firebase.js         Firebase setup and Google sign-in
+firestore.rules       database security rules
+scripts/pdf-fidelity/ PDF-vs-editor comparison test
 ```
 
-## Local Storage (Browser Storage)
+## Contact
 
-All user data is stored locally in the browser using localStorage:
-- **Projects**: Album designs and progress
-- **Reviews**: Customer testimonials
-- **Payments**: Payment records
-- **Language preference**: User's selected language
-
-**Note:** Data persists only on the same device/browser. To enable cloud sync, a backend database (Firebase, Supabase, etc.) would be needed.
-
-## Pricing Tiers
-
-| Pages | Price |
-|-------|-------|
-| 30–40 | 22–25 JOD |
-| 41–55 | 26–29 JOD |
-| 56–70 | 34–37 JOD |
-| 71–85 | 34–37 JOD |
-| 86–100 | 38–41 JOD |
-| 101–115 | 42–46 JOD |
-| 116–130 | 47–50 JOD |
-| 131–146 | 51–55 JOD |
-| 147–162 | 56–60 JOD |
-| 163–178 | 61–65 JOD |
-
-## Occasions Supported
-
-- Wedding 💍
-- Baby Shower 🍼
-- Birthday 🎂
-- Graduation 🎓
-- Engagement 💐
-- Travel ✈️
-- Family 👨‍👩‍👧‍👦
-- Anniversary ❤️
-
-## Browser Support
-
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
-- Mobile browsers (iOS Safari, Chrome Mobile)
-
-## Future Enhancements
-
-- [ ] Backend integration for server-side saves
-- [ ] User authentication and accounts
-- [ ] Cloud storage for projects
-- [ ] Admin dashboard for payment review
-- [ ] Expanded sticker and font library
-- [ ] PDF export functionality
-- [ ] Email notifications
-- [ ] Social sharing
-
-## Colors & Theme
-
-- **Primary Purple**: #D8C0FF (Pastel Purple)
-- **Deep Purple**: #7B5EA7
-- **Dark Purple**: #4A3068
-- **Gold Accent**: #D4A853
-- **Soft Pink**: #F5E6FF
-
-## Fonts
-
-- **Display**: Londrina Solid (MIORA branding)
-- **Serif**: Playfair Display (section titles)
-- **Body**: Quicksand (primary text)
-- **Arabic**: Noto Sans Arabic
-
-## Support
-
-For questions or issues:
-- Email: contact@miorabylayal.com
-- Instagram: @miorabylayal
-- WhatsApp: [Add WhatsApp link]
-
-## License
+Instagram [@miorabylayal](https://instagram.com/miorabylayal) · WhatsApp link in the site footer.
 
 © 2026 Miora by Layal. All rights reserved.
-
----
-
-**Made with 💜 for capturing life's beautiful moments**

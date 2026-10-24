@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// Security rules for Miora by Layal.
+// Deploy with:  firebase deploy --only firestore:rules
+// (or paste into Firebase console → Firestore Database → Rules → Publish)
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Layal's admin account (email/password sign-in). The admin check in the
+    // website UI is only cosmetic — THIS is what actually protects the data.
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == "mioraphotosjo@gmail.com"
+        && (request.auth.token.email_verified == true
+            || request.auth.token.firebase.sign_in_provider == "password");
+    }
+
+    function isSignedInCustomer() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != "anonymous";
+    }
+
+    // ── Orders ────────────────────────────────────────────────────────────
+    match /payments/{paymentId} {
+      // A signed-in customer can create their own order, always as "pending".
+      allow create: if isSignedInCustomer()
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.status == "pending";
+
+      // Customers see only their own orders; the admin sees everything.
+      allow read: if isAdmin()
+        || (request.auth != null && resource.data.customerUid == request.auth.uid);
+
+      // Only the admin can approve/reject or delete.
+      allow update, delete: if isAdmin();
+
+      // Album pages saved with the order (used to generate the print PDF).
+      match /pages/{pageId} {
+        allow create: if request.auth != null
+          && get(/databases/$(database)/documents/payments/$(paymentId)).data.customerUid == request.auth.uid;
+        allow read, update, delete: if isAdmin();
+      }
+    }
+
+    // ── Reviews ───────────────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      // The public site only queries approved reviews.
+      allow read: if resource.data.approved == true || isAdmin();
+
+      // Anyone visiting (including the automatic anonymous session) can
+      // submit a review, but it is hidden until the admin approves it.
+      allow create: if request.auth != null
+        && request.resource.data.approved == false
+        && request.resource.data.keys().hasOnly(["name", "text", "rating", "approved", "createdAt", "date"])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.text is string && request.resource.data.text.size() <= 1000
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5;
+
+      allow update, delete: if isAdmin();
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
