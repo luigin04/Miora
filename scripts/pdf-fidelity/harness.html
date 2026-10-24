@@ -32,17 +32,24 @@ function staticPage(page) {
   return h("div", R.pageStyle(page), { "data-page": "1" }, (page.elements || []).map(el => h("div", R.elementBoxStyle(el), {}, elementContent(el))));
 }
 
-window.runTest = async function (pages) {
+window.calibrate = async function () {
+  const out = {};
+  for (const st of ["viewbox", "css-transform", "scaled-image"]) out[st] = await R.__strategyWorks(st, R.PRINT_SCALE);
+  out.picked = await R.pickRenderStrategy(R.PRINT_SCALE);
+  return out;
+};
+window.runTest = async function (pages, strategy) {
   const host = document.getElementById("host");
+  host.innerHTML = "";
   const nodes = pages.map(p => { const n = staticPage(p); const wrap = h("div", { marginBottom: 20 }, {}, n); host.append(wrap); return n; });
   await document.fonts.ready;
   await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
   const rasters = [];
   for (let i = 0; i < pages.length; i++) {
-    const c = await R.rasterizePage(nodes[i], { background: pages[i].background, fontFamilies: R.fontsUsedByPage(pages[i]), fontCssUrl: location.origin + "/fonts.css" });
+    const c = await R.rasterizePage(nodes[i], { background: pages[i].background, fontFamilies: R.fontsUsedByPage(pages[i]), fontCssUrl: location.origin + "/fonts.css", strategy });
     rasters.push(c.toDataURL("image/png"));
   }
-  const pdf = await R.exportPagesToPdf(window.jspdf.jsPDF, pages, nodes, { title: "test", fontCssUrl: location.origin + "/fonts.css" });
+  const pdf = await R.exportPagesToPdf(window.jspdf.jsPDF, pages, nodes, { title: "test", fontCssUrl: location.origin + "/fonts.css", strategy });
   return { rasters, pdf: pdf.output("datauristring") };
 };
 window.harnessReady = true;
