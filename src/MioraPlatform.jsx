@@ -8,7 +8,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymou
 import jsPDF from "jspdf";
 import {
   PAGE_W, PAGE_H, FONT_CSS_URL, pageStyle, elementBoxStyle, imageStyle, stickerBoxStyle,
-  stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf,
+  stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf, UnsupportedBrowserError,
 } from "./pageRender";
 import { loadProjects, saveProjects, requestPersistentStorage } from "./projectStore";
 
@@ -2754,6 +2754,13 @@ function AdminView({ authUser, onExit, t, lang, isRTL }) {
       pdf.save(`${title.replace(/\s+/g, "-")}-print.pdf`);
     } catch (err) {
       console.error("Admin PDF generation failed:", err);
+      if (err instanceof UnsupportedBrowserError) {
+        setPdfError(t(
+          "This browser can't create print-quality PDFs (iPhone/iPad browsers have this limitation). Please generate the PDF in Chrome on a computer.",
+          "هذا المتصفح لا يستطيع إنشاء ملفات PDF بجودة الطباعة (متصفحات iPhone/iPad لديها هذا القيد). يرجى إنشاء الملف باستخدام Chrome على الكمبيوتر."
+        ));
+        return;
+      }
       setPdfError(t(
         "PDF generation failed. Please check your connection and try again (Chrome on a computer works best).",
         "فشل إنشاء PDF. يرجى التحقق من الاتصال والمحاولة مرة أخرى (يفضل استخدام Chrome على الكمبيوتر)."

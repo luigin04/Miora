@@ -207,10 +207,113 @@ function loadImage(src) {
   });
 }
 
+// ── Scaling strategies ──────────────────────────────────────────────────────
+// Browsers differ in how they scale HTML inside an SVG <foreignObject> up to
+// print resolution. Chrome on a computer honours the SVG viewBox, but WebKit
+// (Safari, and EVERY browser on iPhone/iPad — including Chrome for iOS)
+// ignores it and draws the page at 1x in the corner of the big canvas, which
+// produced PDFs with tiny photos in the top-left of each page. So each
+// strategy is verified once per session against a calibration page (right
+// size AND sharp edges) and the first one that passes is used.
+const XHTML = "http://www.w3.org/1999/xhtml";
+
+function buildSvg(strategy, inner, width, height, scale) {
+  const W = width * scale, H = height * scale;
+  if (strategy === "viewbox") {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${width} ${height}">` +
+      `<foreignObject x="0" y="0" width="${width}" height="${height}">` +
+      `<div xmlns="${XHTML}" style="width:${width}px;height:${height}px;">${inner}</div>` +
+      `</foreignObject></svg>`;
+  }
+  if (strategy === "css-transform") {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+      `<foreignObject x="0" y="0" width="${W}" height="${H}">` +
+      `<div xmlns="${XHTML}" style="width:${W}px;height:${H}px;overflow:hidden;">` +
+      `<div style="width:${width}px;height:${height}px;transform:scale(${scale});transform-origin:0 0;">${inner}</div>` +
+      `</div></foreignObject></svg>`;
+  }
+  // "scaled-image": a 1x SVG that the canvas scales up while drawing.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+    `<foreignObject x="0" y="0" width="${width}" height="${height}">` +
+    `<div xmlns="${XHTML}" style="width:${width}px;height:${height}px;">${inner}</div>` +
+    `</foreignObject></svg>`;
+}
+
+const STRATEGIES = ["viewbox", "css-transform", "scaled-image"];
+const isWebKit = () => typeof navigator !== "undefined"
+  && /AppleWebKit/i.test(navigator.userAgent) && !/Chrome|Chromium|Edg\//i.test(navigator.userAgent);
+
+async function paintSvg(svg, width, height, scale, background) {
+  const img = await loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg));
+  if (img.decode) { try { await img.decode(); } catch { /* drawImage below still works */ } }
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  const paint = () => {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  };
+  paint();
+  // WebKit sometimes paints <foreignObject> images before their embedded
+  // resources have decoded; a second paint after a short pause fixes it.
+  if (isWebKit()) {
+    await new Promise(r => setTimeout(r, 300));
+    paint();
+  }
+  return canvas;
+}
+
+// Calibration page: left half red, right half white. A correct render at
+// `scale` has the red/white edge exactly at the middle with no blur, and red
+// reaching the bottom-left corner.
+async function strategyWorks(strategy, scale) {
+  const w = PAGE_W, h = PAGE_H;
+  const inner = `<div style="width:${w}px;height:${h}px;position:relative;background:#ffffff;">` +
+    `<div style="position:absolute;left:0;top:0;width:${w / 2}px;height:${h}px;background:#ff0000;"></div></div>`;
+  try {
+    const c = await paintSvg(buildSvg(strategy, inner, w, h, scale), w, h, scale, "#ffffff");
+    const ctx = c.getContext("2d");
+    const px = (x, y) => ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+    const red = p => p[0] > 220 && p[1] < 40 && p[2] < 40;
+    const white = p => p[0] > 220 && p[1] > 220 && p[2] > 220;
+    const mid = (w / 2) * scale, bottom = h * scale;
+    // ±2 device px from the edge: a blurry 1x-then-stretched render fails here.
+    return red(px(4, 4)) && red(px(4, bottom - 4)) && red(px(mid - 2, bottom / 2))
+      && white(px(mid + 2, bottom / 2)) && white(px(w * scale - 4, bottom - 4));
+  } catch {
+    return false;
+  }
+}
+
+const strategyCache = new Map();
+export function pickRenderStrategy(scale = PRINT_SCALE) {
+  if (!strategyCache.has(scale)) {
+    strategyCache.set(scale, (async () => {
+      for (const s of STRATEGIES) if (await strategyWorks(s, scale)) return s;
+      return null;
+    })());
+  }
+  return strategyCache.get(scale);
+}
+
+export class UnsupportedBrowserError extends Error {
+  constructor() {
+    super("This browser cannot render print-quality pages. Please use Chrome on a computer.");
+    this.name = "UnsupportedBrowserError";
+  }
+}
+
 export async function rasterizePage(node, {
   scale = PRINT_SCALE, width = PAGE_W, height = PAGE_H,
-  background = "#ffffff", fontFamilies, fontCssUrl = FONT_CSS_URL,
+  background = "#ffffff", fontFamilies, fontCssUrl = FONT_CSS_URL, strategy,
 } = {}) {
+  const chosen = strategy || await pickRenderStrategy(scale);
+  if (!chosen) throw new UnsupportedBrowserError();
+
   const clone = node.cloneNode(true);
   // Inline every image (photos are already data URLs; stickers and template
   // covers are site files) so the snapshot is fully self-contained.
@@ -228,38 +331,15 @@ export async function rasterizePage(node, {
   const fontCss = fontFamilies && fontFamilies.size ? await buildEmbeddedFontCss(fontFamilies, fontCssUrl) : "";
   const html = new XMLSerializer().serializeToString(clone);
   const styleText = (CSS_RESET + "\n" + fontCss).replace(/]]>/g, "]]]]><![CDATA[>");
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}">` +
-    `<foreignObject x="0" y="0" width="${width}" height="${height}">` +
-    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;">` +
-    `<style><![CDATA[${styleText}]]></style>${html}</div>` +
-    `</foreignObject></svg>`;
-
-  const img = await loadImage("data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg));
-  if (img.decode) { try { await img.decode(); } catch { /* drawImage below still works */ } }
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  const ctx = canvas.getContext("2d");
-  const paint = () => {
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  };
-  paint();
-  // Safari sometimes paints <foreignObject> images before their embedded
-  // resources have decoded; a second paint after a short pause fixes it.
-  if (/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
-    await new Promise(r => setTimeout(r, 300));
-    paint();
-  }
-  return canvas;
+  const inner = `<style><![CDATA[${styleText}]]></style>${html}`;
+  return paintSvg(buildSvg(chosen, inner, width, height, scale), width, height, scale, background);
 }
 
 // Builds the print PDF: one full-bleed page per album page.
 // `jsPDF` is passed in (rather than imported) to keep this file dependency-free.
-export async function exportPagesToPdf(jsPDF, pages, nodes, { title = "Miora Album", onProgress, fontCssUrl } = {}) {
+export async function exportPagesToPdf(jsPDF, pages, nodes, { title = "Miora Album", onProgress, fontCssUrl, strategy } = {}) {
+  // Fail fast with a clear message rather than producing a broken PDF.
+  if (!strategy && !(await pickRenderStrategy(PRINT_SCALE))) throw new UnsupportedBrowserError();
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: [PDF_PAGE_WIDTH_MM, PDF_PAGE_HEIGHT_MM], compress: true });
   const w = pdf.internal.pageSize.getWidth();
   const h = pdf.internal.pageSize.getHeight();
@@ -270,6 +350,7 @@ export async function exportPagesToPdf(jsPDF, pages, nodes, { title = "Miora Alb
       background: pages[i].background || "#ffffff",
       fontFamilies: fontsUsedByPage(pages[i]),
       ...(fontCssUrl ? { fontCssUrl } : {}),
+      ...(strategy ? { strategy } : {}),
     });
     const jpeg = canvas.toDataURL("image/jpeg", 0.95);
     canvas.width = canvas.height = 0; // free the bitmap before the next page
@@ -280,3 +361,6 @@ export async function exportPagesToPdf(jsPDF, pages, nodes, { title = "Miora Alb
   pdf.setProperties({ title, creator: "Miora by Layal" });
   return pdf;
 }
+
+// Exposed for the fidelity test only.
+export const __strategyWorks = strategyWorks;
