@@ -2,7 +2,8 @@
 // action "describe": short descriptions for a batch of small thumbnails (vision).
 // action "plan": groups all described photos into ordered chapters with titles + theme stickers.
 const API = "https://api.anthropic.com/v1/messages";
-const MODEL = process.env.MIORA_AI_MODEL || "claude-haiku-5-5";
+const MODEL = (process.env.MIORA_AI_MODEL || "claude-haiku-5-5").trim();
+const KEY = (process.env.ANTHROPIC_API_KEY || "").trim().replace(/^["']|["']$/g, "");
 
 const DESCRIBE_PROMPT = `You help design printed photo albums. For each photo, return JSON only:
 {"photos":[{"id":"<id>","desc":"<max 14 words: who/what, activity>","place":"<short place or scene label, e.g. 'airport', 'beach', 'birthday cake table', 'restaurant'>","food":true|false,"highlight":true|false}]}
@@ -21,7 +22,7 @@ Return JSON only: {"themeKey":"..","title":"..","subtitle":"..","chapters":[{"ti
 async function callClaude(system, content, maxTokens) {
   const r = await fetch(API, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    headers: { "content-type": "application/json", "x-api-key": KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
   });
   if (!r.ok) throw new Error(`Claude API ${r.status}: ${(await r.text()).slice(0, 200)}`);
@@ -36,7 +37,7 @@ const json = (status, body) => new Response(JSON.stringify(body), { status, head
 
 export default async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
-  if (!process.env.ANTHROPIC_API_KEY) return json(500, { error: "ANTHROPIC_API_KEY not set" });
+  if (!KEY) return json(500, { error: "ANTHROPIC_API_KEY not set" });
   let body;
   try { body = await req.json(); } catch { return json(400, { error: "bad json" }); }
   try {
@@ -62,7 +63,7 @@ export default async (req) => {
     return json(400, { error: "unknown action" });
   } catch (e) {
     console.error("ai-plan failed:", body && body.action, MODEL, String(e.message || e));
-    return json(502, { error: String(e.message || e), model: MODEL });
+    return json(502, { error: String(e.message || e) + ` (key starts ${KEY.slice(0, 10)}…, length ${KEY.length})`, model: MODEL });
   }
 };
 
