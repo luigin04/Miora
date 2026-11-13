@@ -1574,135 +1574,131 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
   };
 
   // ── AI Layout Engine ─────────────────────────────────────────────────────
+  // 1) Claude (via /api/ai-plan, key stays on Netlify) describes small thumbnails in batches.
+  // 2) Claude groups them into ordered chapters (same place/event together, food together) + theme stickers.
+  // 3) We pack each chapter into pages of max 3 photos, alternating calm/busy, stickers kept off photos.
+  const [theme, setTheme] = useState("");
+  const [progress, setProgress] = useState("");
+  const [aiError, setAiError] = useState(null);
+
+  const thumb = (src, max = 384) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      resolve({ data: c.toDataURL("image/jpeg", 0.7), ratio: img.width / img.height });
+    };
+    img.onerror = () => resolve({ data: null, ratio: 0.75 });
+    img.src = src;
+  });
+
+  const api = async (payload) => {
+    const r = await fetch("/.netlify/functions/ai-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `AI request failed (${r.status})`);
+    return j;
+  };
+
+  // Page frames on the 400×520 canvas. Each layout lists photo boxes + sticker spots that never overlap the boxes.
+  const PAGE_LAYOUTS = {
+    1: [ { boxes:[[40,40,320,410]], spots:[[8,8],[340,8],[8,460],[340,460]], titleY:458 } ],
+    2: [ { boxes:[[22,60,172,250],[206,90,172,250]], spots:[[20,8],[330,20],[20,420],[330,430]], titleY:360 },
+         { boxes:[[40,24,320,215],[40,262,320,215]], spots:[[2,236],[352,236],[8,484],[350,480]], titleY:null } ],
+    3: [ { boxes:[[18,24,178,235],[204,40,178,235],[100,290,200,200]], spots:[[14,300],[330,300],[20,440],[330,440]], titleY:null },
+         { boxes:[[18,40,214,300],[242,24,140,160],[242,196,140,160]], spots:[[250,370],[330,440],[20,360],[180,460]], titleY:400 } ],
+  };
+
   const generateAlbum = async () => {
     if (photos.length < 5) return;
-    setStep(3);
+    setAiError(null); setStep(3);
+    const ids = photos.map((_, i) => "p" + i);
+    let described = ids.map(id => ({ id }));
+    let plan = null;
+    try {
+      setProgress(t("Looking at your photos…", "نتعرّف على صورك…"));
+      const thumbs = await Promise.all(photos.map(src => thumb(src)));
+      const batches = [];
+      for (let i = 0; i < ids.length; i += 12) batches.push(ids.slice(i, i + 12));
+      let done = 0;
+      const results = await Promise.all(batches.map(async (b) => {
+        const out = await api({ action: "describe", images: b.map(id => ({ id, data: thumbs[+id.slice(1)].data })).filter(x => x.data) })
+          .catch(() => ({ photos: [] }));
+        done += b.length;
+        setProgress(t(`Looking at your photos… ${Math.min(done, ids.length)}/${ids.length}`, `نتعرّف على صورك… ${Math.min(done, ids.length)}/${ids.length}`));
+        return out.photos || [];
+      }));
+      const byId = Object.fromEntries(results.flat().map(p => [p.id, p]));
+      described = ids.map(id => ({ id, ...(byId[id] || {}) }));
+      setProgress(t("Grouping moments into chapters…", "نرتّب اللحظات في فصول…"));
+      plan = await api({ action: "plan", theme: theme || chosenTemplate?.occasion || "family memories", lang, items: described });
+    } catch (e) {
+      console.error("AI design failed, using simple order", e);
+      setAiError(String(e.message || e));
+    }
 
-    // Page layout patterns — varied to make each spread unique
-    const LAYOUTS = [
-      // Single full-page image
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:pageH-20 }
-      ],
-      // Two landscape images stacked
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH/2)-15 },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH/2)+5, w:pageW-20, h:(pageH/2)-15 },
-      ],
-      // Three images: big left, two right
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW/2)-15, h:pageH-20 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW/2)+5, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[2]||photos[0], x:(pageW/2)+5, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-      ],
-      // Four equal grid
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW/2)+5, y:10, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[2]||photos[0], x:10, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-        { type:"image", src:photos[3]||photos[0], x:(pageW/2)+5, y:(pageH/2)+5, w:(pageW/2)-15, h:(pageH/2)-15 },
-      ],
-      // Big top, two bottom
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH*0.55) },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH*0.55)+10, w:(pageW/2)-15, h:(pageH*0.42) },
-        { type:"image", src:photos[2]||photos[0], x:(pageW/2)+5, y:(pageH*0.55)+10, w:(pageW/2)-15, h:(pageH*0.42) },
-      ],
-      // Three horizontal strips
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:pageW-20, h:(pageH/3)-12 },
-        { type:"image", src:photos[1]||photos[0], x:10, y:(pageH/3)+5, w:pageW-20, h:(pageH/3)-12 },
-        { type:"image", src:photos[2]||photos[0], x:10, y:(2*pageH/3)+5, w:pageW-20, h:(pageH/3)-15 },
-      ],
-      // Portrait left, square stack right
-      (photos, pageW=400, pageH=520) => [
-        { type:"image", src:photos[0], x:10, y:10, w:(pageW*0.6)-15, h:pageH-20 },
-        { type:"image", src:photos[1]||photos[0], x:(pageW*0.6)+5, y:10, w:(pageW*0.4)-15, h:(pageH/3)-5 },
-        { type:"image", src:photos[2]||photos[0], x:(pageW*0.6)+5, y:(pageH/3)+8, w:(pageW*0.4)-15, h:(pageH/3)-5 },
-        { type:"image", src:photos[3]||photos[0], x:(pageW*0.6)+5, y:(2*pageH/3)+8, w:(pageW*0.4)-15, h:(pageH/3)-18 },
-      ],
-    ];
-
-    // Sticker packs per occasion
-    const OCCASION_STICKERS = {
-      Travel:      ["✈️","🗺️","📸","🌍","🧳","🌊","⭐","🏖️","🌴","🗻"],
-      Wedding:     ["💍","🌹","💐","💕","✨","🥂","💒","🎀","🕊️","❤️"],
-      Anniversary: ["❤️","🥂","💕","🌹","✨","💑","🎊","💖"],
-      Birthday:    ["🎂","🎉","🎈","🎁","🎊","⭐","🥳","🍰"],
-      "Baby Shower":["🍼","👶","🧸","⭐","🌙","💙","🎀","🌈"],
-      Graduation:  ["🎓","🏆","📚","⭐","🎉","🎊","💪"],
-      Family:      ["🏡","❤️","💕","⭐","🌻","👨‍👩‍👧‍👦"],
-      Friendship:  ["💕","🌸","✨","🎉","😊","💜"],
-      Engagement:  ["💍","✨","💕","🥂","💐","🌹"],
-    };
+    // Validate plan: every photo exactly once, unknown ids dropped, missing ones appended.
+    const seen = new Set(); const chapters = [];
+    for (const ch of (plan?.chapters || [])) {
+      const cids = (ch.ids || []).filter(id => ids.includes(id) && !seen.has(id));
+      cids.forEach(id => seen.add(id));
+      if (cids.length) chapters.push({ title: String(ch.title || "").slice(0, 40), ids: cids });
+    }
+    const leftover = ids.filter(id => !seen.has(id));
+    if (leftover.length) chapters.push({ title: chapters.length ? t("More favourite moments", "لحظات أخرى نحبها") : "", ids: leftover });
 
     const occasion = chosenTemplate?.occasion || "Travel";
-    const stickers = OCCASION_STICKERS[occasion] || OCCASION_STICKERS.Travel;
+    const FALLBACK = { Travel:["✈️","🗺️","📸","🌍","🧳","🌊","⭐","🌴"], Birthday:["🎂","🎉","🎈","🎁","⭐","🥳"], Wedding:["💍","🌹","💐","💕","✨","🥂"] };
+    const stickers = (plan?.stickers?.length ? plan.stickers : (FALLBACK[occasion] || FALLBACK.Travel)).slice(0, 16);
+    const [tint, accent, dark] = (plan?.palette?.length === 3 ? plan.palette : ["#fff8fe", "#c0506a", "#4A3068"]);
+    const highlight = Object.fromEntries(described.map(d => [d.id, !!d.highlight]));
+    const src = (id) => photos[+id.slice(1)];
 
-    // Shuffle photos for variety
-    const shuffled = [...photos].sort(() => Math.random() - 0.5);
-
-    // Calculate how many pages we need
-    const totalPhotos = shuffled.length;
-    let minPages = Math.max(MIN_ALBUM_PAGES, totalPhotos + 4); // at least 30 pages
-    if (minPages % 2 !== 0) minPages++;                         // printed as two-page spreads
     const pages = [];
-    let photoIdx = 0;
-
-    // Cover pages from template (if chosen)
     const coverPages = chosenTemplate?.pages?.slice(0, 2) || [
       { id:"back-"+generateId(), background:"#ffffff", elements:[] },
-      { id:"front-"+generateId(), background:"#ffffff", elements:
-        chosenTemplate?.coverImg ? [{ id:"cv-"+generateId(), type:"image", src:chosenTemplate.coverImg, x:0, y:0, w:400, h:520, rotation:0 }] : []
-      },
+      { id:"front-"+generateId(), background: tint, elements:[
+        { id:generateId(), type:"text", content: plan?.title || chosenTemplate?.title || "My Album", x:30, y:200, w:340, h:120,
+          font:"Playfair Display", fontSize:40, color: dark, bold:true, italic:false, rotation:0 },
+        ...stickers.slice(0, 3).map((s, i) => ({ id:generateId(), type:"sticker", content:s, x:90 + i*80, y:340, w:60, h:60, rotation:(i-1)*12 })) ] },
     ];
     pages.push(...coverPages);
 
-    // Interior pages with AI layouts
-    for (let i = 0; i < minPages - 2; i++) {
-      const layoutIdx = i % LAYOUTS.length;
-      const layout = LAYOUTS[layoutIdx];
-      const photosNeeded = layout.length || 1;
-
-      // Grab photos for this page (cycle if we run out)
-      const pagePhotos = [];
-      for (let j = 0; j < photosNeeded; j++) {
-        pagePhotos.push(shuffled[photoIdx % shuffled.length]);
-        photoIdx++;
-      }
-
-      const elements = layout(pagePhotos).map(el => ({
-        ...el,
-        id: generateId(),
-        rotation: (Math.random() - 0.5) * 3, // subtle tilt
-      }));
-
-      // Add a sticker on ~40% of pages
-      if (Math.random() < 0.4 && stickers.length > 0) {
-        const sticker = stickers[Math.floor(Math.random() * stickers.length)];
-        const size = 40 + Math.random() * 30;
-        elements.push({
-          id: generateId(), type:"sticker", content:sticker,
-          x: 10 + Math.random() * 330, y: 10 + Math.random() * 450,
-          w:size, h:size, rotation:(Math.random()-0.5)*30,
+    let si = 0, pageNo = 0;
+    const PATTERN = [2, 3, 2, 1, 3, 2];
+    for (const ch of chapters) {
+      let i = 0, first = true;
+      while (i < ch.ids.length) {
+        let n = highlight[ch.ids[i]] ? 1 : PATTERN[pageNo % PATTERN.length];
+        n = Math.min(n, 3, ch.ids.length - i);
+        const group = ch.ids.slice(i, i + n); i += n;
+        const variants = PAGE_LAYOUTS[n];
+        const L = variants[pageNo % variants.length];
+        const els = group.map((id, k) => {
+          const [x, y, w, h] = L.boxes[k];
+          return { id:generateId(), type:"image", src:src(id), x, y, w, h, rotation: ((k % 2 ? 1 : -1) * (1 + (pageNo % 3))) };
         });
+        if (first && ch.title) {
+          const ty = L.titleY ?? 488;
+          els.push({ id:generateId(), type:"text", content:ch.title, x:30, y: ty, w:340, h:34,
+            font:"Dancing Script", fontSize:24, color: accent, bold:true, italic:false, rotation:0 });
+        }
+        // 2–3 stickers per page, only on the safe spots for this layout
+        const count = 2 + (pageNo % 2);
+        L.spots.slice(0, count).forEach(([x, y], k) => {
+          els.push({ id:generateId(), type:"sticker", content: stickers[(si++) % stickers.length], x, y, w:44, h:44, rotation: (k % 2 ? 12 : -12) });
+        });
+        pages.push({ id:generateId(), background: pageNo % 3 === 1 ? tint : "#ffffff", elements: els });
+        first = false; pageNo++;
       }
-
-      // Random background: mostly white, occasionally a light tint
-      const bgs = ["#ffffff","#ffffff","#ffffff","#fff8fe","#f8f8ff","#fff9f5"];
-      const bg = bgs[Math.floor(Math.random() * bgs.length)];
-
-      pages.push({ id: generateId(), background:bg, elements });
     }
+    // printed as two-page spreads, minimum album length
+    while (pages.length < MIN_ALBUM_PAGES || pages.length % 2) pages.push({ id:generateId(), background:"#ffffff", elements:[] });
 
-    // Create project with generated pages
     const pid = createProject("ai", occasion);
-    updateProject(pid, {
-      title: chosenTemplate?.title || "My Album",
-      pages,
-    });
-
-    await new Promise(r => setTimeout(r, 800));
+    updateProject(pid, { title: plan?.title || chosenTemplate?.title || "My Album", pages });
+    await new Promise(r => setTimeout(r, 400));
     onComplete(pid);
   };
 
@@ -1719,7 +1715,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
           {t("Designing your album…","جاري تصميم ألبومك…")}
         </div>
         <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, textAlign:"center", maxWidth:300 }}>
-          {(() => { const n = Math.max(MIN_ALBUM_PAGES, photos.length + 4) + (Math.max(MIN_ALBUM_PAGES, photos.length + 4) % 2); return t(`Arranging ${photos.length} photos across ${n} pages`, `ترتيب ${photos.length} صورة على ${n} صفحة`); })()}
+          {progress || t("Getting started…","نبدأ…")}
         </div>
         <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
@@ -1805,6 +1801,8 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
           )}
 
           {/* Generate button */}
+          <input value={theme} onChange={e => setTheme(e.target.value)} placeholder={t("Theme (optional) — e.g. Dubai trip, bees & polka dots, 1st birthday","الطابع (اختياري) — مثلاً رحلة دبي، عيد ميلاد أول")}
+            style={{ width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:12, border:`1px solid ${PASTEL_PURPLE}55`, marginBottom:12, fontFamily:"inherit", fontSize:14 }} />
           <button onClick={generateAlbum} disabled={!ready}
             style={{ width:"100%", padding:"16px", borderRadius:14, border:"none",
               background: ready ? `linear-gradient(135deg,${DEEP_PURPLE},#7B5EA7)` : `${PASTEL_PURPLE}30`,
