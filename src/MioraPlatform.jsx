@@ -1579,7 +1579,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
   // 3) We pack each chapter into pages of max 3 photos, alternating calm/busy, stickers kept off photos.
   const [theme, setTheme] = useState("");
   const [progress, setProgress] = useState("");
-  const [aiError, setAiError] = useState(null);
 
   const thumb = (src, max = 384) => new Promise((resolve) => {
     const img = new Image();
@@ -1612,7 +1611,7 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
 
   const generateAlbum = async () => {
     if (photos.length < 5) return;
-    setAiError(null); setStep(3);
+    setStep(3);
     const ids = photos.map((_, i) => "p" + i);
     let described = ids.map(id => ({ id }));
     let plan = null;
@@ -1635,7 +1634,6 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
       plan = await api({ action: "plan", theme: theme || chosenTemplate?.occasion || "family memories", lang, items: described });
     } catch (e) {
       console.error("AI design failed, using simple order", e);
-      setAiError(String(e.message || e));
     }
 
     // Validate plan: every photo exactly once, unknown ids dropped, missing ones appended.
