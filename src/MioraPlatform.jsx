@@ -11,7 +11,7 @@ import {
   stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf, UnsupportedBrowserError,
 } from "./pageRender";
 import { loadProjects, saveProjects, requestPersistentStorage } from "./projectStore";
-import { THEMES, LAYOUTS, pickThemeKey, framePhoto, stickerName, PACKS_FOR_AI, LAYOUT_CATALOGUE, layoutFor } from "./aiTheme";
+import { THEMES, LAYOUTS, pickThemeKey, framePhoto, stickerName, allStickersFor, washiSVG, tagSVG, pillSVG, badgeSVG, cameraPhoto } from "./aiTheme";
 
 // ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
@@ -1601,126 +1601,197 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
   const stickerEl = (src, x, y, size, rotation) => ({ id: generateId(), type: "sticker", src, content: "", x, y, w: size, h: size, rotation });
   const stickerAt = (theme, n) => theme.stickers[n % theme.stickers.length];
 
-  // Turn the designed page list into editor pages (frames baked in, stickers by name).
-  const buildBook = async (design, theme, title, subtitle, heroId) => {
-    const pages = [];
+  // ── Render one designed page (Claude's free-form layout) into editor elements ──
+  const clampN = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  const renderPage = async (pd, theme, byName, used) => {
+    const els = [], boxes = [];
+    const list = Array.isArray(pd.elements) ? pd.elements : [];
+    const order = { photo: 0, tape: 1, sticker: 2, badge: 3, tag: 3, pill: 3, title: 4, script: 4 };
+    const sorted = [...list].sort((a, b) => (order[a.t] ?? 5) - (order[b.t] ?? 5));
+    let fullBleed = false;
+    for (const e of sorted) {
+      const rot = clampN(e.rot, -25, 25, 0);
+      if (e.t === "photo") {
+        const idx = +String(e.id || "").slice(1);
+        if (!photos[idx]) continue;
+        const w = clampN(e.w, 80, 400, 180), x = clampN(e.x, -10, 400 - 40, 20), y = clampN(e.y, -10, 520 - 40, 20);
+        if (e.frame === "camera") {
+          const cam = await cameraPhoto(photos[idx], w);
+          if (cam) { const h = Math.round(w / cam.ratio); els.push({ id: generateId(), type: "sticker", src: cam.url, content: "", x, y, w, h, rotation: rot }); boxes.push([x, y, w, h]); continue; }
+        }
+        const h = clampN(e.h, 80, 520, 240);
+        if (w >= 390 && h >= 500) fullBleed = true;
+        const frame = ["polaroid", "white", "plain"].includes(e.frame) ? e.frame : "polaroid";
+        els.push({ id: generateId(), type: "image", src: await framePhoto(photos[idx], w, h, frame), x, y, w, h, rotation: rot });
+        boxes.push([x, y, w, h]);
+      } else if (e.t === "sticker") {
+        let src = byName[e.name];
+        if (!src) { const pool = Object.values(byName).filter(u => !used.has(u)); src = pool[Math.floor(Math.random() * pool.length)] || Object.values(byName)[0]; }
+        const size = clampN(e.size, 24, 130, 60);
+        let x = clampN(e.x, -20, 400 - size + 20, 10), y = clampN(e.y, -20, 520 - size + 20, 10);
+        // Safety: a sticker centred over the middle of a photo (where faces usually are) is pushed to that photo's nearest edge.
+        for (const [bx, by, bw, bh] of boxes) {
+          if (fullBleed) break;
+          const cx = x + size / 2, cy = y + size / 2;
+          if (cx > bx + bw * 0.2 && cx < bx + bw * 0.8 && cy > by + bh * 0.2 && cy < by + bh * 0.8) {
+            const dTop = cy - by, dBot = by + bh - cy;
+            y = dTop < dBot ? by - size * 0.55 : by + bh - size * 0.45;
+            y = clampN(y, -10, 520 - size, y);
+          }
+        }
+        used.add(src);
+        els.push({ id: generateId(), type: "sticker", src, content: "", x, y, w: size, h: size, rotation: rot });
+      } else if (e.t === "tape") {
+        const w = clampN(e.w, 40, 140, 80);
+        els.push({ id: generateId(), type: "sticker", src: washiSVG(e.style, theme.colors), content: "", x: clampN(e.x, -10, 390, 20), y: clampN(e.y, -10, 510, 20), w, h: Math.round(w * 34 / 200), rotation: rot });
+      } else if (e.t === "tag" || e.t === "pill") {
+        const g = e.t === "tag" ? tagSVG(String(e.text || "").slice(0, 34)) : pillSVG(String(e.text || "").slice(0, 20), theme.colors);
+        const w = clampN(e.w, 60, 300, 160);
+        els.push({ id: generateId(), type: "sticker", src: g.url, content: "", x: clampN(e.x, 0, 400 - w, 20), y: clampN(e.y, 0, 500, 20), w, h: Math.round(w / g.ratio), rotation: rot });
+      } else if (e.t === "badge") {
+        const size = clampN(e.size, 50, 90, 70);
+        els.push({ id: generateId(), type: "sticker", src: badgeSVG(e.top || "DAY", e.big || "", e.bottom || "", theme.colors), content: "",
+          x: clampN(e.x, 0, 400 - size, 10), y: clampN(e.y, 0, 520 - size, 10), w: size, h: Math.round(size * 102 / 92), rotation: rot });
+      } else if (e.t === "title" || e.t === "script") {
+        const text = String(e.text || "").slice(0, 60);
+        if (!text) continue;
+        const isTitle = e.t === "title", size = clampN(e.size, 14, 52, isTitle ? 32 : 20);
+        const w = clampN(e.w, 80, 400, 300);
+        els.push({ id: generateId(), type: "text", content: text, x: clampN(e.x, 0, 400 - w, 20), y: clampN(e.y, 0, 500, 20), w, h: Math.round(size * (isTitle ? 1.5 : 1.6) * Math.max(1, Math.ceil(text.length * size * 0.5 / w))),
+          font: isTitle ? theme.titleFont : "Caveat", fontSize: size, color: fullBleed ? "#ffffff" : (isTitle ? theme.colors.dark : theme.colors.dark), bold: isTitle, italic: false, rotation: rot });
+      }
+    }
     const bgs = theme.backgrounds;
-    const byName = {};
-    theme.stickers.forEach(u => { byName[stickerName(u)] = u; });
-    const heroSrc = await framePhoto(photos[+heroId.slice(1)], 250, 290, "polaroid");
-    pages.push({ id: "back-" + generateId(), background: theme.colors.soft, elements: [
-      txtEl(t("Made with love on Miora", "صُنع بحب على ميورا"), 60, 440, 280, 30, "Quicksand", 13, theme.colors.dark),
-      stickerEl(stickerAt(theme, 3), 170, 370, 60, 0) ] });
-    pages.push({ id: "front-" + generateId(), background: bgs[1 % bgs.length], elements: [
-      txtEl(title, 20, 18, 360, 70, theme.titleFont, 36, theme.colors.dark, true),
-      ...(subtitle ? [txtEl(subtitle, 40, 84, 320, 26, "Quicksand", 14, theme.colors.accent)] : []),
-      { id: generateId(), type: "image", src: heroSrc, x: 75, y: 118, w: 250, h: 290, rotation: -3 },
-      stickerEl(stickerAt(theme, 0), 14, 400, 74, -10), stickerEl(stickerAt(theme, 1), 312, 396, 74, 10),
-      stickerEl(stickerAt(theme, 2), 300, 96, 56, 12) ] });
-    if (message.trim()) {
-      pages.push({ id: generateId(), background: theme.colors.soft, elements: [
-        txtEl(message.trim(), 44, 70, 312, 330, "Dancing Script", 19, theme.colors.dark),
-        stickerEl(stickerAt(theme, 4), 18, 420, 66, -8), stickerEl(stickerAt(theme, 5), 316, 424, 62, 10) ] });
-    }
-    let stick = 6;
-    for (let pi = 0; pi < design.length; pi++) {
-      const d = design[pi];
-      const L = layoutFor(d.layout) || LAYOUTS[d.ids.length][0];
-      const els = [];
-      for (let k = 0; k < d.ids.length; k++) {
-        const [x, y, w, h, rot, frame] = L.boxes[k];
-        const src = await framePhoto(photos[+d.ids[k].slice(1)], w, h, frame);
-        els.push({ id: generateId(), type: "image", src, x, y, w, h, rotation: rot });
-      }
-      if (d.title) {
-        const ty = L.title != null ? L.title : null;
-        if (ty != null) els.push(txtEl(d.title, 20, ty, 360, 44, theme.titleFont, 26, theme.colors.accent, true));
-      }
-      const wanted = (d.stickers || []).map(n => byName[n]).filter(Boolean);
-      for (let k = 0; k < L.spots.length && k < Math.max(2, wanted.length); k++) {
-        const [x, y, size, rot] = L.spots[k];
-        const src = wanted[k] || stickerAt(theme, stick);
-        if (!wanted[k]) stick += 3;
-        els.push(stickerEl(src, x, y, size, rot));
-      }
-      const bi = Number.isInteger(d.background) ? d.background : 0;
-      pages.push({ id: generateId(), background: bgs[Math.abs(bi) % bgs.length], elements: els });
-      setWork({ step: 3, text: t(`Designing page ${pi + 1} of ${design.length}…`, `نصمّم الصفحة ${pi + 1} من ${design.length}…`), pct: 70 + Math.round(28 * (pi + 1) / design.length) });
-    }
-    pages.push({ id: generateId(), background: theme.colors.soft, elements: [
-      txtEl(t("until next time…", "إلى اللقاء…"), 40, 200, 320, 60, theme.titleFont, 32, theme.colors.dark, true),
-      stickerEl(stickerAt(theme, 1), 90, 290, 80, -8), stickerEl(stickerAt(theme, 2), 230, 290, 80, 8) ] });
-    while (pages.length < MIN_ALBUM_PAGES || pages.length % 2) pages.push({ id: generateId(), background: "#ffffff", elements: [] });
-    return pages;
+    return { id: generateId(), background: bgs[Math.abs(clampN(pd.background, 0, 99, 0)) % bgs.length], elements: els };
   };
 
-  // Simple packing used only for photos the AI didn't place (or if the AI is unreachable).
-  const autoPages = (ids, highlight) => {
-    const out = []; const PATTERN = [2, 3, 2, 1, 3, 2]; let i = 0, n0 = 0;
-    while (i < ids.length) {
-      let n = highlight[ids[i]] ? 1 : PATTERN[n0 % PATTERN.length];
-      n = Math.min(n, ids.length - i);
-      out.push({ layout: `${n}${"abc"[n0 % (n === 1 ? 2 : 3)]}`, ids: ids.slice(i, i + n), stickers: [], background: n0 % 3 === 1 ? 1 : 0 });
-      i += n; n0++;
-    }
-    return out;
+  // Template fallback for any page Claude couldn't design.
+  const fallbackDesign = (brief, theme, k) => {
+    const n = brief.photos.length, variants = LAYOUTS[n] || LAYOUTS[1], L = variants[k % variants.length];
+    const names = allStickersFor(theme).map(stickerName);
+    const el = brief.photos.map((ph, i) => { const [x, y, w, h, rot, frame] = L.boxes[i]; return { t: "photo", id: ph.id, x, y, w, h, rot, frame }; });
+    if (brief.chapterTitle && L.title != null) el.push({ t: "title", text: brief.chapterTitle, x: 20, y: L.title, w: 360, size: 28 });
+    L.spots.forEach(([x, y, size, rot], i) => el.push({ t: "sticker", name: names[(k * 5 + i * 7) % names.length], x, y, size, rot }));
+    return { pageNo: brief.pageNo, background: k % 3 === 1 ? 1 : 0, elements: el };
   };
 
   const generate = async () => {
     if (photos.length < 5) return;
     setStage("working"); setAiIssue("");
     const ids = photos.map((_, i) => "p" + i);
-    let described = ids.map(id => ({ id })), plan = null;
+    let described = ids.map(id => ({ id })), outline = null;
+    const thumbs = [];
     try {
-      setWork({ step: 1, text: t("Claude is looking at your photos…", "Claude يتعرّف على صورك…"), pct: 3 });
-      const thumbs = [];
-      for (let i = 0; i < photos.length; i++) thumbs.push(await thumb(photos[i]));
+      // 1 — look at every photo
+      setWork({ step: 1, text: t("Claude is studying your photos…", "Claude يدرس صورك…"), pct: 2 });
+      for (let i = 0; i < photos.length; i++) thumbs.push(await thumb(photos[i], 512));
       const batches = [];
-      for (let i = 0; i < ids.length; i += 12) batches.push(ids.slice(i, i + 12));
+      for (let i = 0; i < ids.length; i += 10) batches.push(ids.slice(i, i + 10));
       const results = [];
       for (let b = 0; b < batches.length; b += 3) {
         const chunk = batches.slice(b, b + 3).map(batch => api({ action: "describe",
           images: batch.map(id => thumbs[+id.slice(1)]).map((th, k) => ({ id: batch[k], data: th && th.data, ratio: th && th.ratio })).filter(x => x.data) })
           .catch(err => ({ photos: [], err: String(err.message || err) })));
         results.push(...await Promise.all(chunk));
-        setWork({ step: 1, text: t(`Claude is looking at your photos… ${Math.min(ids.length, (b + 3) * 12)}/${ids.length}`, `Claude يتعرّف على صورك… ${Math.min(ids.length, (b + 3) * 12)}/${ids.length}`),
-          pct: 3 + Math.round(37 * Math.min(1, (b + 3) / batches.length)) });
+        setWork({ step: 1, text: t(`Claude is studying your photos… ${Math.min(ids.length, (b + 3) * 10)}/${ids.length}`, `Claude يدرس صورك… ${Math.min(ids.length, (b + 3) * 10)}/${ids.length}`),
+          pct: 2 + Math.round(23 * Math.min(1, (b + 3) / batches.length)) });
       }
       if (results.length && results.every(r => r.err)) throw new Error(results[0].err);
       const byId = {};
       results.forEach(r => (r.photos || []).forEach(p => { byId[p.id] = p; }));
       described = ids.map((id, i) => ({ id, ratio: thumbs[i] ? thumbs[i].ratio : 0.75, ...(byId[id] || {}) }));
-      setWork({ step: 2, text: t("Claude is designing your album page by page… (this can take a minute or two)", "Claude يصمّم ألبومك صفحة بصفحة… (قد يستغرق دقيقة أو اثنتين)"), pct: 42 });
-      plan = await api({ action: "plan", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang,
-        packs: themeKey !== "auto" ? { [themeKey]: PACKS_FOR_AI[themeKey] } : PACKS_FOR_AI, layouts: LAYOUT_CATALOGUE, items: described },
-        (n) => setWork({ step: 2, text: t(`Claude is designing your album… (${Math.round(n / 1000)}k characters written)`, `Claude يصمّم ألبومك… (${Math.round(n / 1000)}k حرف)`), pct: Math.min(68, 42 + Math.round(n / 400)) }));
-    } catch (e) { console.error("AI design failed", e); setAiIssue(String(e.message || e)); }
+      // 2 — plan the story
+      setWork({ step: 2, text: t("Claude is planning the story and chapters…", "Claude يخطط القصة والفصول…"), pct: 27 });
+      outline = await api({ action: "outline", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang, items: described });
+    } catch (e) { console.error("AI planning failed", e); setAiIssue(String(e.message || e)); }
 
-    const highlight = {};
-    described.forEach(d => { highlight[d.id] = !!d.highlight; });
-    // Validate Claude's pages: known ids only, each once, max 3 per page, layout must match photo count.
-    const seen = new Set(), design = [];
-    (plan?.pages || []).forEach(pg => {
-      const pids = (pg.ids || []).filter(id => ids.includes(id) && !seen.has(id)).slice(0, 3);
-      if (!pids.length) return;
-      pids.forEach(id => seen.add(id));
-      const lay = String(pg.layout || "");
-      const layout = +lay[0] === pids.length && layoutFor(lay) ? lay : `${pids.length}a`;
-      design.push({ layout, ids: pids, title: String(pg.title || "").slice(0, 40), stickers: Array.isArray(pg.stickers) ? pg.stickers : [], background: pg.background });
+    const key = themeKey !== "auto" ? themeKey : pickThemeKey(themeText, outline?.themeKey);
+    const theme = THEMES[key];
+    const info = {};
+    described.forEach(d => { info[d.id] = d; });
+    // Validate outline → page briefs (each photo once, max 3 per page)
+    const seen = new Set(), briefs = [];
+    (outline?.chapters || []).forEach(ch => {
+      let first = true;
+      (ch.pages || []).forEach(pg => {
+        const pids = (Array.isArray(pg) ? pg : (pg.ids || [])).filter(id => ids.includes(id) && !seen.has(id)).slice(0, 3);
+        if (!pids.length) return;
+        pids.forEach(id => seen.add(id));
+        briefs.push({ pageNo: briefs.length + 1, chapterTitle: first ? String(ch.title || "").slice(0, 40) : "", badge: first ? ch.badge || null : null,
+          photos: pids.map(id => ({ id, desc: info[id].desc, place: info[id].place, ratio: info[id].ratio, faces: info[id].faces, highlight: info[id].highlight, food: info[id].food })) });
+        first = false;
+      });
     });
     const leftover = ids.filter(id => !seen.has(id));
-    if (leftover.length) {
-      const extra = autoPages(leftover, highlight);
-      if (design.length) extra[0].title = t("More favourite moments", "لحظات أخرى نحبها");
-      design.push(...extra);
+    for (let i = 0, k = 0; i < leftover.length; k++) {
+      const n = Math.min([2, 3, 1][k % 3], leftover.length - i);
+      briefs.push({ pageNo: briefs.length + 1, chapterTitle: k === 0 ? t("More favourite moments", "لحظات أخرى نحبها") : "", badge: null,
+        photos: leftover.slice(i, i + n).map(id => ({ id, desc: info[id].desc, place: info[id].place, ratio: info[id].ratio, faces: info[id].faces })) });
+      i += n;
     }
 
-    const key = themeKey !== "auto" ? themeKey : pickThemeKey(themeText, plan?.themeKey);
-    const theme = THEMES[key];
-    const title = albumTitle.trim() || plan?.title || t("Our Memories", "ذكرياتنا");
-    const heroId = Object.keys(highlight).find(id => highlight[id]) || ids[0];
-    setWork({ step: 3, text: t("Building your pages…", "نبني صفحاتك…"), pct: 70 });
-    const pages = await buildBook(design, theme, title, plan?.subtitle || "", heroId);
+    // 3 — design the pages (5 per request, 3 requests at a time)
+    const all = allStickersFor(theme);
+    const byName = {};
+    all.forEach(u => { byName[stickerName(u)] = u; });
+    const themeBrief = { name: theme.label[0], colors: theme.colors, titleFont: theme.titleFont,
+      backgrounds: theme.backgrounds.map((b, i) => i === 0 ? "0: plain/calm" : `${i}: ${b.includes("radial") ? "polka dots" : b.includes("linear") ? "grid/lines" : "solid colour"}`),
+      themeStickers: theme.stickers.map(stickerName), extraStickers: all.slice(theme.stickers.length).map(stickerName) };
+    const chunks = [];
+    for (let i = 0; i < briefs.length; i += 5) chunks.push(briefs.slice(i, i + 5));
+    const designed = {}, recently = [];
+    let doneChunks = 0;
+    for (let c = 0; c < chunks.length; c += 3) {
+      const batch = chunks.slice(c, c + 3);
+      const recent = recently.slice(-30);
+      const out = await Promise.all(batch.map(pages => api({ action: "design", theme: themeBrief, recentlyUsed: recent, lang, pages })
+        .catch(err => ({ pages: [], err: String(err.message || err) }))));
+      out.forEach(o => (o.pages || []).forEach(pd => {
+        designed[pd.pageNo] = pd;
+        (pd.elements || []).forEach(e => { if (e.t === "sticker" && e.name) recently.push(e.name); });
+      }));
+      const errs = out.filter(o => o.err);
+      if (errs.length && !aiIssue) setAiIssue(errs[0].err);
+      doneChunks += batch.length;
+      setWork({ step: 3, text: t(`Claude is designing pages… ${Math.min(briefs.length, doneChunks * 5)}/${briefs.length}`, `Claude يصمّم الصفحات… ${Math.min(briefs.length, doneChunks * 5)}/${briefs.length}`),
+        pct: 30 + Math.round(55 * doneChunks / Math.max(1, chunks.length)) });
+    }
+
+    // 4 — build the book
+    setWork({ step: 4, text: t("Framing photos and placing stickers…", "نؤطّر الصور ونضع الملصقات…"), pct: 88 });
+    const used = new Set(), pages = [];
+    const title = albumTitle.trim() || outline?.title || t("Our Memories", "ذكرياتنا");
+    const heroId = described.find(d => d.highlight)?.id || ids[0];
+    pages.push({ id: "back-" + generateId(), background: theme.colors.soft, elements: [
+      txtEl(t("Made with love on Miora", "صُنع بحب على ميورا"), 60, 440, 280, 30, "Quicksand", 13, theme.colors.dark),
+      stickerEl(stickerAt(theme, 3), 170, 370, 60, 0) ] });
+    pages.push(await renderPage({ background: 1, elements: [
+      { t: "title", text: title, x: 20, y: 22, w: 360, size: 38 },
+      ...(outline?.subtitle ? [{ t: "script", text: outline.subtitle, x: 40, y: 84, w: 320, size: 20 }] : []),
+      { t: "photo", id: heroId, x: 70, y: 124, w: 260, h: 300, rot: -3, frame: "polaroid" },
+      { t: "tape", style: "dots", x: 160, y: 112, w: 90, rot: -4 },
+      { t: "sticker", name: stickerName(theme.stickers[0]), x: 6, y: 400, size: 96, rot: -10 },
+      { t: "sticker", name: stickerName(theme.stickers[1 % theme.stickers.length]), x: 300, y: 392, size: 92, rot: 10 },
+      { t: "sticker", name: "sparkle-gold", x: 330, y: 120, size: 30, rot: 0 }, { t: "sticker", name: "sparkle-white", x: 352, y: 150, size: 18, rot: 0 } ] }, theme, byName, used));
+    if (message.trim()) {
+      pages.push({ id: generateId(), background: theme.colors.soft, elements: [
+        txtEl(message.trim(), 44, 70, 312, 330, "Caveat", 21, theme.colors.dark),
+        stickerEl(stickerAt(theme, 4), 18, 420, 70, -8), stickerEl(stickerAt(theme, 5), 312, 424, 66, 10) ] });
+    }
+    for (let i = 0; i < briefs.length; i++) {
+      const pd = designed[briefs[i].pageNo];
+      const ok = pd && (pd.elements || []).some(e => e.t === "photo");
+      // make sure every photo of the brief is on the page even if Claude dropped one
+      let design = ok ? pd : fallbackDesign(briefs[i], theme, i);
+      const placed = new Set((design.elements || []).filter(e => e.t === "photo").map(e => e.id));
+      if (briefs[i].photos.some(ph => !placed.has(ph.id))) design = fallbackDesign(briefs[i], theme, i);
+      pages.push(await renderPage(design, theme, byName, used));
+      setWork({ step: 4, text: t(`Building page ${i + 1} of ${briefs.length}…`, `نبني الصفحة ${i + 1} من ${briefs.length}…`), pct: 88 + Math.round(11 * (i + 1) / briefs.length) });
+    }
+    pages.push({ id: generateId(), background: theme.colors.soft, elements: [
+      txtEl(t("until next time…", "إلى اللقاء…"), 40, 200, 320, 60, theme.titleFont, 34, theme.colors.dark, true),
+      stickerEl(stickerAt(theme, 1), 90, 290, 84, -8), stickerEl(stickerAt(theme, 2), 226, 290, 84, 8) ] });
+    while (pages.length < MIN_ALBUM_PAGES || pages.length % 2) pages.push({ id: generateId(), background: "#ffffff", elements: [] });
     setWork({ step: 4, text: t("Done!", "جاهز!"), pct: 100 });
     setResult({ pages, title, themeKey: key });
     setStage("preview");
@@ -1739,7 +1810,7 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
 
   // ── Working screen ──
   if (stage === "working") {
-    const steps = [t("Looking at your photos", "نتعرّف على صورك"), t("Grouping moments", "نرتّب اللحظات"), t("Designing pages", "نصمّم الصفحات"), t("Finishing touches", "اللمسات الأخيرة")];
+    const steps = [t("Studying your photos", "دراسة صورك"), t("Planning the story", "تخطيط القصة"), t("Designing every page", "تصميم كل صفحة"), t("Framing & finishing", "التأطير واللمسات الأخيرة")];
     return (
       <div dir={isRTL ? "rtl" : "ltr"} style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <link href={FONT_LINK} rel="stylesheet" />

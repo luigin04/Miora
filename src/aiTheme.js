@@ -146,3 +146,76 @@ export const layoutFor = (key) => {
   const v = "abc".indexOf(String(key || "")[1]);
   return LAYOUTS[n] ? LAYOUTS[n][Math.max(0, v) % LAYOUTS[n].length] : null;
 };
+
+// ── Shared decoration pack (from Miora's own reference books + vector extras) ──
+const COMMON_FILES = ["favorite-person-arrow.png", "you-i-truly-love-you.png", "heart-so-much-love.png", "newspaper-heart.png", "ticket-to-happiness.png",
+  "red-heart-doodle.png", "tulips-and-lips.png", "stick-figures-holding-hands.png", "i-love-you-cutout.png", "love-envelope.png", "best-thing-word.png",
+  "soulmate-word.png", "push-pin.png", "safety-pin.png", "envelope-purple.png", "note-paper-pinned.png", "note-paper-clip.png", "retro-camera-silver.png",
+  ...Array.from({ length: 10 }, (_, i) => `floral-${i + 1}.png`),
+  "sparkle-gold.svg", "sparkle-pink.svg", "sparkle-dark.svg", "sparkle-white.svg", "starburst-gold.svg", "starburst-pink.svg", "starburst-blue.svg",
+  "heart-pink.svg", "heart-red.svg", "heart-gold.svg", "butterfly-lilac.svg", "butterfly-coral.svg", "balloon-gold.svg", "balloon-dark.svg"];
+export const COMMON_STICKERS = COMMON_FILES.map(f => `/stickers/common/${f}`);
+export const allStickersFor = (theme) => [...theme.stickers, ...COMMON_STICKERS];
+
+// ── Generated decorations (SVG data URLs so they print exactly like on screen) ──
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const svgUrl = (svg) => "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+
+export function washiSVG(style, colors) {
+  const a = colors.accent, d = colors.dark;
+  const pat = {
+    dots: `<rect width="200" height="34" fill="${a}" opacity=".88"/>` + Array.from({ length: 34 }, (_, i) => `<circle cx="${(i % 17) * 12 + (i >= 17 ? 6 : 0) + 4}" cy="${i >= 17 ? 24 : 10}" r="3" fill="#fff" opacity=".85"/>`).join(""),
+    stripes: Array.from({ length: 20 }, (_, i) => `<rect x="${i * 10}" width="10" height="34" fill="${i % 2 ? "#fff" : a}" opacity=".9"/>`).join(""),
+    dark: `<rect width="200" height="34" fill="${d}" opacity=".9"/>` + Array.from({ length: 34 }, (_, i) => `<circle cx="${(i % 17) * 12 + (i >= 17 ? 6 : 0) + 4}" cy="${i >= 17 ? 24 : 10}" r="2.6" fill="#fff" opacity=".8"/>`).join(""),
+    gingham: `<rect width="200" height="34" fill="#fff" opacity=".9"/>` + Array.from({ length: 20 }, (_, i) => `<rect x="${i * 10}" width="5" height="34" fill="${a}" opacity=".4"/>`).join("") + Array.from({ length: 4 }, (_, i) => `<rect y="${i * 10}" width="200" height="5" fill="${a}" opacity=".4"/>`).join(""),
+    plain: `<rect width="200" height="34" fill="${a}" opacity=".55"/>`,
+  }[style] || "";
+  const zig = "M0 0 L4 4 L0 8 L4 12 L0 17 L4 22 L0 26 L4 30 L0 34 L196 34 L200 30 L196 26 L200 22 L196 17 L200 12 L196 8 L200 4 L196 0 Z";
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 34" width="200" height="34"><defs><clipPath id="z"><path d="${zig}"/></clipPath></defs><g clip-path="url(#z)">${pat}</g></svg>`);
+}
+
+export function tagSVG(text) {
+  const w = Math.max(80, 18 + String(text).length * 9.2);
+  return { url: svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 ${w + 8} 40" width="${w + 8}" height="40">
+    <path d="M0 3 L${w * 0.4} 0 L${w * 0.7} 2 L${w} 0 L${w - 2} 16 L${w} 32 L${w * 0.6} 30 L${w * 0.3} 32 L0 30 L2 16 Z" fill="rgba(0,0,0,.18)" transform="translate(1.5 2)"/>
+    <path d="M0 3 L${w * 0.4} 0 L${w * 0.7} 2 L${w} 0 L${w - 2} 16 L${w} 32 L${w * 0.6} 30 L${w * 0.3} 32 L0 30 L2 16 Z" fill="#F4EDE0"/>
+    <text x="${w / 2}" y="21" text-anchor="middle" font-family="Courier New, Courier, monospace" font-size="15" fill="#1F1B16">${esc(text)}</text></svg>`), ratio: (w + 8) / 40 };
+}
+
+export function pillSVG(text, colors) {
+  const w = Math.max(90, 34 + String(text).length * 11);
+  return { url: svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 ${w + 12} 52" width="${w + 12}" height="52">
+    <rect x="2" y="4" width="${w}" height="40" rx="20" fill="rgba(0,0,0,.18)"/>
+    <rect x="0" y="0" width="${w}" height="40" rx="20" fill="${colors.dark}" stroke="#fff" stroke-width="4"/>
+    <text x="${w / 2}" y="26" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="15" letter-spacing="1.5" fill="${colors.soft}">${esc(String(text).toUpperCase())}</text></svg>`), ratio: (w + 12) / 52 };
+}
+
+export function badgeSVG(top, big, bottom, colors) {
+  return svgUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 92 102" width="92" height="102">
+    <rect x="2" y="4" width="80" height="90" rx="6" fill="rgba(0,0,0,.2)"/>
+    <rect x="0" y="0" width="80" height="90" rx="6" fill="${colors.dark}" stroke="#fff" stroke-width="4"/>
+    <rect x="5" y="5" width="70" height="80" rx="4" fill="none" stroke="${colors.accent}" stroke-width="2.5"/>
+    <text x="40" y="24" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="10" letter-spacing="3" fill="${colors.accent}">${esc(String(top).toUpperCase())}</text>
+    <text x="40" y="60" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="34" fill="#fff">${esc(big)}</text>
+    <text x="40" y="78" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="9" letter-spacing="1.5" fill="#fff">${esc(String(bottom).toUpperCase())}</text></svg>`);
+}
+
+// Bake a photo into the retro silver camera frame (screen area measured from the asset).
+export function cameraPhoto(src, w) {
+  return new Promise((resolve) => {
+    const frame = new Image(), img = new Image(); let n = 0;
+    const go = () => {
+      if (++n < 2) return;
+      const k = 2.4, W = Math.round(w * k), H = Math.round(W * frame.height / frame.width);
+      const c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+      const sx0 = 0.158 * W, sy0 = 0.236 * H, sw0 = (0.646 - 0.158) * W, sh0 = (0.731 - 0.236) * H;
+      g.drawImage(frame, 0, 0, W, H);
+      const r = Math.max(sw0 / img.width, sh0 / img.height), sw = sw0 / r, sh = sh0 / r;
+      g.drawImage(img, (img.width - sw) / 2, Math.max(0, (img.height - sh) * 0.35), sw, sh, sx0, sy0, sw0, sh0);
+      resolve({ url: c.toDataURL("image/png"), ratio: frame.width / frame.height });
+    };
+    frame.onload = go; img.onload = go;
+    frame.onerror = img.onerror = () => resolve(null);
+    frame.src = "/stickers/common/retro-camera-silver.png"; img.src = src;
+  });
+}

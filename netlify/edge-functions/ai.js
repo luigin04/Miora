@@ -1,35 +1,88 @@
 // Miora AI Powered Design — streaming proxy to Claude (Opus 5.5 by default).
-// Edge Function + streamed response = no 10s function limit; Claude can take its time.
-// Prompts live here (server side); the browser only sends photos/descriptions.
+// Edge Function + streamed response = no 10s limit; Claude can think and take its time.
+// All prompts live here (server side); the browser only sends photos / descriptions / page briefs.
 const API = "https://api.anthropic.com/v1/messages";
 
 const DESCRIBE = `You are the photo editor for Miora, a premium printed photo-album studio.
-For each photo return JSON only:
-{"photos":[{"id":"..","desc":"<max 16 words: who/what/activity/mood>","place":"<short place/event label consistent across photos of the same place>","food":true|false,"people":<number of people>,"highlight":true|false,"faces":"top|middle|bottom|none"}]}
-"highlight": standout photo worth a full page (iconic landmark, great group shot, emotional moment) — at most 1 in 5. Never guess names.`;
+Look carefully at each photo. Return JSON only:
+{"photos":[{"id":"..","desc":"<max 18 words: who, what, activity, mood, notable objects>",
+ "place":"<short place/event label; use the SAME label for photos of the same place/event, e.g. 'airport', 'Burj Khalifa top', 'cake table', 'beach'>",
+ "food":true|false,"people":<int>,"highlight":true|false,
+ "faces":"<where faces are: top|middle|bottom|left|right|spread|none>",
+ "mood":"<one word>","colors":"<2 dominant colours>"}]}
+"highlight" = a standout photo that deserves a full page (iconic landmark with people, great group shot, emotional or funny moment). About 1 in 6. Never guess names.`;
 
-const PLAN = `You are Miora's senior album designer. Design a beautiful, story-driven printed album.
+const OUTLINE = `You are Miora's art director. Plan a printed photo album as a story.
+You get photo descriptions (upload/time order, with aspect ratio), the customer's theme and allowed theme packs.
+Rules:
+- Every photo id exactly once. Max 3 photos per page.
+- Group photos of the same place / event / outfit together (same page or consecutive pages). Food photos together.
+- Sensible story order (chronological: beginning first, farewell last).
+- Pacing: alternate calm pages (1–2 photos) and busy pages (3). Never more than two 3-photo pages in a row. Highlights get their own page.
+  For N photos aim for roughly N/2 pages.
+- Chapters: one per place/event/day. Warm short titles (max 5 words), no invented names. If photos look like a trip over several days,
+  give each chapter a badge like {"top":"DAY","big":"3","bottom":"17 JAN"} only when the dates are clear, otherwise omit badge.
+- Pick themeKey from allowed keys (customer's choice wins if given). Album title max 6 words; optional subtitle.
+Think it through, then return JSON only:
+{"themeKey":"..","title":"..","subtitle":"..","chapters":[{"title":"..","badge":null,"pages":[["p0","p1"],["p2"]]}]}`;
 
-You receive: the customer's theme, photo descriptions (in upload/time order, with orientation), the sticker packs
-(by name) and the page layout catalogue. You return the full page-by-page design.
+const DESIGN = `You are Miora's senior scrapbook designer. You design printed album pages by hand, like a human designer in Canva:
+every photo, frame, tilt, sticker, washi tape and caption is placed deliberately. Quality bar: premium, playful, never generic.
 
-Design rules (follow strictly):
-- Use EVERY photo id exactly once. Never repeat a photo.
-- Max 3 photos per page. Alternate calm pages (1–2 photos) and busy pages (3) — never more than two 3-photo pages in a row.
-- Keep photos of the same place / event / outfit together on the same or consecutive pages. Food photos stay together.
-- Tell the story in a sensible order (usually chronological: arrival/beginning first, farewell/ending last).
-- Highlight photos get a 1-photo page. Match orientation: landscape photos fit "2b" (stacked) or wide slots; portraits fit the others.
-- Start each chapter with a short warm title (max 5 words) on a layout that has a title slot. No invented names.
-- Stickers: pick from the chosen pack only, by exact name. 2–4 per page, relevant to the page content
-  (e.g. food page → food stickers, landmark page → that landmark), vary them, don't repeat the same sticker on facing pages.
-- background: an index into the pack's backgrounds (0 = calmest). Mostly 0, use the patterned ones for variety (about 1 in 3 pages).
-- Choose themeKey from the allowed list (use the customer's choice if given).
-Return JSON only:
-{"themeKey":"..","title":"<album title, max 6 words>","subtitle":"<optional short line>",
- "pages":[{"layout":"2a","ids":["p3","p4"],"title":"<only on chapter-opening pages>","stickers":["bee","honeycomb"],"background":0}]}`;
+CANVAS: each page is 400 wide × 520 tall (units are px; 0,0 = top-left). Keep everything inside the page (stickers may bleed off an edge a little).
+
+ELEMENTS you can place (JSON objects in "elements"):
+- {"t":"photo","id":"p4","x":..,"y":..,"w":..,"h":..,"rot":-3,"frame":"polaroid|white|plain|camera"}
+   polaroid = white frame with thick bottom; white = thin white border; plain = no border (use for full-bleed 0,0,400,520);
+   camera = photo shown inside a retro silver digital camera (h is set automatically = w*0.75; use w 220–360, great for landscape photos, max 1 per page).
+   Match the photo's aspect ratio roughly (ratio = w/h of the photo). Photos 140–380 wide. Rotation −6..6 (hero shots 0..±2).
+- {"t":"sticker","name":"<exact name from the sticker list>","x":..,"y":..,"size":40-110,"rot":-20..20}
+- {"t":"tape","style":"dots|stripes|dark|gingham|plain","x":..,"y":..,"w":60-110,"rot":..}  washi tape (height ~15). Use it to "hold" photos at corners/top edge.
+- {"t":"title","text":"..","x":..,"y":..,"w":..,"size":24-46,"rot":0} elegant chapter/page title in the theme font.
+- {"t":"script","text":"..","x":..,"y":..,"w":..,"size":16-26,"rot":..} handwritten caption (warm, short).
+- {"t":"tag","text":"..","x":..,"y":..,"w":..,"rot":..} typewriter paper strip, max 32 chars, e.g. "first stop: snacks, obviously".
+- {"t":"pill","text":"..","x":..,"y":..,"w":..,"rot":..} bold label, max 18 chars, e.g. "BEE-DAY GIRL", "YALLA!".
+- {"t":"badge","top":"DAY","big":"3","bottom":"17 JAN","x":..,"y":..,"size":60-80,"rot":-5..5} only on chapter-opening pages that have a badge.
+
+DESIGN RULES (this is what makes Miora books great):
+1. NEVER cover faces. You are told where faces are in each photo; stickers/tape/text may overlap a photo only at its corners or outer edge.
+   Put most stickers in the margins and empty areas between photos.
+2. Stickers: 3–6 per page (fewer on hero/full-bleed pages). Make them RELEVANT to what's in the photos (food → food stickers, landmark → that
+   landmark, baby/birthday → balloons/hearts, flowers → florals/butterflies). Cluster small ones (sparkles, hearts) in a corner instead of spreading
+   them evenly. Use different stickers on every page — never reuse a sticker that appears in "recentlyUsed", and vary sizes (one big, some small).
+3. Every page has a point of view: a title or a short caption/tag/pill that fits the moment (funny, warm, specific). Chapter-opening pages get the
+   chapter title (big) and the badge if given. Don't caption every photo.
+4. Vary composition from page to page: overlapping tilted polaroids, a straight hero photo with white frame, two portraits side by side, landscape
+   stacks, a camera frame, a full-bleed photo with a short title on it (white text needs a calm area). Never repeat the previous page's arrangement.
+5. Use tape on polaroids/white frames often (1–2 pieces at corners or top centre, angled ±10–40°).
+6. background: index into the theme's backgrounds (0 = plain/calm). Use patterns for variety (~1 in 3 pages); full-bleed pages ignore it.
+7. Leave breathing room: ~12px+ margins, photos don't overlap more than 25%.
+
+EXAMPLE of one good page (2 photos, chapter opener):
+{"pageNo":5,"background":2,"elements":[
+ {"t":"badge","top":"DAY","big":"2","bottom":"8 JAN","x":300,"y":14,"size":70,"rot":5},
+ {"t":"title","text":"on the Tigris","x":20,"y":18,"w":270,"size":36,"rot":0},
+ {"t":"photo","id":"p7","x":18,"y":92,"w":176,"h":250,"rot":-3,"frame":"polaroid"},
+ {"t":"photo","id":"p8","x":206,"y":112,"w":176,"h":250,"rot":3,"frame":"polaroid"},
+ {"t":"tape","style":"dots","x":70,"y":82,"w":80,"rot":-8},{"t":"tape","style":"dots","x":256,"y":102,"w":80,"rot":10},
+ {"t":"tag","text":"golden hour on the river","x":30,"y":392,"w":200,"rot":-3},
+ {"t":"sticker","name":"palm","x":300,"y":380,"size":96,"rot":6},
+ {"t":"sticker","name":"sparkle-gold","x":250,"y":440,"size":30,"rot":0},{"t":"sticker","name":"sparkle-white","x":270,"y":470,"size":18,"rot":0}]}
+
+Think about each page before writing. Return JSON only: {"pages":[{"pageNo":..,"background":..,"elements":[...]}]} — one entry per requested page, same pageNo values.`;
 
 const env = (n) => (globalThis.Netlify && Netlify.env.get(n)) || "";
 const clean = (v) => String(v || "").trim().replace(/^["']|["']$/g, "");
+
+async function callClaude(KEY, MODEL, system, content, max_tokens, thinking) {
+  const body = { model: MODEL, max_tokens, stream: true, system, messages: [{ role: "user", content }] };
+  if (thinking) body.thinking = { type: "enabled", budget_tokens: thinking };
+  return fetch(API, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify(body),
+  });
+}
 
 export default async (req) => {
   if (req.method !== "POST") return new Response("POST only", { status: 405 });
@@ -39,29 +92,32 @@ export default async (req) => {
   const MODEL = clean(env("MIORA_AI_MODEL")) || "claude-opus-5-5";
   let body; try { body = await req.json(); } catch { return Response.json({ error: "bad json" }, { status: 400 }); }
 
-  let system, content, max_tokens;
+  let system, content, max_tokens, thinking = 0;
   if (body.action === "describe") {
-    system = DESCRIBE; max_tokens = 3000; content = [];
+    system = DESCRIBE; max_tokens = 4000; content = [];
     for (const im of (body.images || []).slice(0, 16)) {
       const data = String(im.data || "").replace(/^data:image\/\w+;base64,/, "");
-      if (!data || data.length > 400000) continue;
-      content.push({ type: "text", text: `id: ${im.id}${im.ratio ? ` (aspect ${im.ratio})` : ""}` });
+      if (!data || data.length > 500000) continue;
+      content.push({ type: "text", text: `id: ${im.id} (aspect ratio ${im.ratio || "?"})` });
       content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data } });
     }
     content.push({ type: "text", text: "Describe every photo above. JSON only." });
-  } else if (body.action === "plan") {
-    system = PLAN; max_tokens = 16000;
-    const text = JSON.stringify({ customerTheme: body.theme || "", customerThemeKey: body.themeKey || "auto",
-      language: body.lang === "ar" ? "Arabic titles" : "English titles", allowedThemeKeys: body.themeKeys || [],
-      packs: body.packs || {}, layouts: body.layouts || {}, photos: (body.items || []).slice(0, 400) });
-    content = [{ type: "text", text: text.slice(0, 400000) }];
+  } else if (body.action === "outline") {
+    system = OUTLINE; max_tokens = 16000; thinking = 6000;
+    content = [{ type: "text", text: JSON.stringify({ customerTheme: body.theme || "", customerThemeKey: body.themeKey || "auto",
+      language: body.lang === "ar" ? "Arabic titles" : "English titles", allowedThemeKeys: body.themeKeys || [], photos: (body.items || []).slice(0, 400) }).slice(0, 300000) }];
+  } else if (body.action === "design") {
+    system = DESIGN; max_tokens = 24000; thinking = 8000;
+    content = [{ type: "text", text: JSON.stringify({ theme: body.theme || {}, recentlyUsed: body.recentlyUsed || [],
+      language: body.lang === "ar" ? "Arabic text" : "English text", pages: body.pages || [] }).slice(0, 200000) }];
   } else return Response.json({ error: "unknown action" }, { status: 400 });
 
-  const r = await fetch(API, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: MODEL, max_tokens, stream: true, system, messages: [{ role: "user", content }] }),
-  });
+  let r = await callClaude(KEY, MODEL, system, content, max_tokens, thinking);
+  if (!r.ok && thinking && r.status === 400) {
+    const txt = await r.text();
+    if (/thinking/i.test(txt)) r = await callClaude(KEY, MODEL, system, content, max_tokens, 0);
+    else return Response.json({ error: `Claude API 400: ${txt.slice(0, 300)}`, model: MODEL }, { status: 502 });
+  }
   if (!r.ok) return Response.json({ error: `Claude API ${r.status}: ${(await r.text()).slice(0, 300)}`, model: MODEL }, { status: 502 });
   return new Response(r.body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 };
