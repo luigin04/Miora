@@ -1673,10 +1673,12 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
         const group = ch.ids.slice(i, i + n); i += n;
         const variants = PAGE_LAYOUTS[n];
         const L = variants[pageNo % variants.length];
-        const els = group.map((id, k) => {
+        const tilt = 1 + (pageNo % 3);
+        const els = [];
+        for (let k = 0; k < group.length; k++) {
           const [x, y, w, h] = L.boxes[k];
-          return { id:generateId(), type:"image", src:src(id), x, y, w, h, rotation: ((k % 2 ? 1 : -1) * (1 + (pageNo % 3))) };
-        });
+          els.push({ id:generateId(), type:"image", src:src(group[k]), x, y, w, h, rotation: (k % 2 ? 1 : -1) * tilt });
+        }
         if (first && ch.title) {
           const ty = L.titleY ?? 488;
           els.push({ id:generateId(), type:"text", content:ch.title, x:30, y: ty, w:340, h:34,
@@ -1684,9 +1686,12 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
         }
         // 2–3 stickers per page, only on the safe spots for this layout
         const count = 2 + (pageNo % 2);
-        L.spots.slice(0, count).forEach(([x, y], k) => {
-          els.push({ id:generateId(), type:"sticker", content: stickers[(si++) % stickers.length], x, y, w:44, h:44, rotation: (k % 2 ? 12 : -12) });
-        });
+        const spots = L.spots.slice(0, count);
+        for (let k = 0; k < spots.length; k++) {
+          const [x, y] = spots[k];
+          els.push({ id:generateId(), type:"sticker", content: stickers[si % stickers.length], x, y, w:44, h:44, rotation: (k % 2 ? 12 : -12) });
+          si++;
+        }
         pages.push({ id:generateId(), background: pageNo % 3 === 1 ? tint : "#ffffff", elements: els });
         first = false; pageNo++;
       }
