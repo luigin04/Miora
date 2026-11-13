@@ -1543,6 +1543,7 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
   const [work, setWork] = useState({ step: 0, text: "", pct: 0 });
   const [result, setResult] = useState(null);           // { pages, title, themeKey }
   const [dragOver, setDragOver] = useState(false);
+  const [aiIssue, setAiIssue] = useState("");
 
   const addFiles = async (fileList) => {
     const files = Array.from(fileList || []).filter(f => /image|heic|heif/i.test(f.type || f.name));
@@ -1648,6 +1649,7 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
     setStage("working");
     const ids = photos.map((_, i) => "p" + i);
     let described = ids.map(id => ({ id })), plan = null;
+    setAiIssue("");
     try {
       setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 });
       const thumbs = [];
@@ -1657,17 +1659,19 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
       const results = [];
       for (let b = 0; b < batches.length; b += 3) {           // 3 parallel requests at a time
         const chunk = batches.slice(b, b + 3).map(batch => api({ action: "describe",
-          images: batch.map(id => ({ id, data: thumbs[+id.slice(1)] })).filter(x => x.data) }).catch(() => ({ photos: [] })));
+          images: batch.map(id => ({ id, data: thumbs[+id.slice(1)] })).filter(x => x.data) }).catch(err => ({ photos: [], err: String(err.message || err) })));
         const out = await Promise.all(chunk);
         results.push(...out);
         setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 + Math.round(35 * Math.min(1, (b + 3) / batches.length)) });
       }
+      const firstErr = results.find(r => r.err);
+      if (firstErr && results.every(r => r.err)) throw new Error(firstErr.err);
       const byId = {};
       results.forEach(r => (r.photos || []).forEach(p => { byId[p.id] = p; }));
       described = ids.map(id => ({ id, ...(byId[id] || {}) }));
       setWork({ step: 2, text: t("Grouping your moments into chapters…", "نرتّب لحظاتك في فصول…"), pct: 45 });
       plan = await api({ action: "plan", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang, items: described });
-    } catch (e) { console.error("AI design failed, using simple order", e); }
+    } catch (e) { console.error("AI design failed, using simple order", e); setAiIssue(String(e.message || e)); }
 
     const seen = new Set(), chapters = [];
     (plan?.chapters || []).forEach(ch => {
@@ -1747,6 +1751,11 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
               <button onClick={openInEditor} style={{ ...primaryBtnStyle, width: "auto", padding: "12px 24px" }}>{t("Open in editor →", "افتح في المحرر ←")}</button>
             </div>
           </div>
+          {aiIssue && (
+            <div style={{ background: "#FFF1F1", border: "1px solid #F3B6B6", color: "#9B2C2C", borderRadius: 12, padding: "10px 14px", fontSize: 13, marginBottom: 16 }}>
+              {t("The AI couldn't be reached, so photos were placed in upload order. Reason: ", "تعذر الوصول إلى الذكاء الاصطناعي، فرُتبت الصور حسب الرفع. السبب: ")}<code>{aiIssue.slice(0, 220)}</code>
+            </div>
+          )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
             {filled.map((pg, i) => (
               <div key={pg.id} style={{ width: 400 * scale, height: 520 * scale, borderRadius: 6, overflow: "hidden", boxShadow: "0 4px 18px rgba(74,48,104,.15)", background: "white", position: "relative" }}>

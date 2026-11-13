@@ -61,7 +61,8 @@ export default async (req) => {
     }
     return json(400, { error: "unknown action" });
   } catch (e) {
-    return json(502, { error: String(e.message || e) });
+    console.error("ai-plan failed:", body && body.action, MODEL, String(e.message || e));
+    return json(502, { error: String(e.message || e), model: MODEL });
   }
 };
 
