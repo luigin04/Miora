@@ -14,9 +14,9 @@ Rules:
 - Photos from the same place/event/outfit stay together in one chapter; food photos stay together.
 - Keep chapters in a sensible story order (usually chronological: arrival first, farewell last).
 - Chapter titles: short, warm, max 5 words, no names you were not given.
-- stickers: 10-14 single emoji that fit the theme (e.g. Dubai: 🐪🌴🏙️☀️🕌🛍️✈️🌊☕✨).
-- palette: 3 hex colours matching the theme (background tint, accent, dark text).
-Return JSON only: {"title":"<album title>","palette":["#..","#..","#.."],"stickers":["..."],"chapters":[{"title":"..","ids":["p0","p1"]}]}`;
+- themeKey: pick the best sticker pack from the allowed list given in the request (use the customer's theme if they chose one).
+- title: a warm album title (max 6 words); subtitle: optional short line (e.g. dates or place), no invented names.
+Return JSON only: {"themeKey":"..","title":"..","subtitle":"..","chapters":[{"title":"..","ids":["p0","p1"]}]}`;
 
 async function callClaude(system, content, maxTokens) {
   const r = await fetch(API, {
@@ -56,7 +56,7 @@ export default async (req) => {
     if (body.action === "plan") {
       const items = (body.items || []).slice(0, 400);
       const lines = items.map(p => `${p.id} | ${p.place || ""} | ${p.desc || ""}${p.food ? " | food" : ""}`).join("\n");
-      const text = `Theme / occasion: ${String(body.theme || "family memories").slice(0, 200)}\nLanguage for titles: ${body.lang === "ar" ? "Arabic" : "English"}\n\nPhotos:\n${lines}`;
+      const text = `Allowed themeKey values: ${(body.themeKeys || []).join(", ")}\nCustomer theme choice: ${String(body.themeKey || "auto")}\nTheme / occasion: ${String(body.theme || "family memories").slice(0, 200)}\nLanguage for titles: ${body.lang === "ar" ? "Arabic" : "English"}\n\nPhotos:\n${lines}`;
       return json(200, await callClaude(PLAN_PROMPT, [{ type: "text", text }], 4000));
     }
     return json(400, { error: "unknown action" });

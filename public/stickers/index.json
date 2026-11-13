@@ -1,0 +1,72 @@
+{
+ "bees": [
+  "balloon",
+  "balloon-dark",
+  "bee",
+  "bee-happy",
+  "bee-kiss",
+  "heart",
+  "honey-jar",
+  "honeycomb",
+  "honeycomb-small",
+  "sunflower"
+ ],
+ "iraq": [
+  "dates",
+  "flag",
+  "ishtar-gate",
+  "istikan",
+  "kebab",
+  "kleicha",
+  "malwiya",
+  "palm",
+  "plane",
+  "rosette",
+  "rosette-sand",
+  "tuktuk"
+ ],
+ "dubai": [
+  "abra",
+  "ain-dubai",
+  "burj-al-arab",
+  "burj-khalifa",
+  "butterfly",
+  "camel",
+  "dallah",
+  "desert-sun",
+  "dubai-frame",
+  "karak",
+  "lantern",
+  "museum-future",
+  "palm",
+  "palm-island",
+  "shopping-bag",
+  "sunglasses",
+  "uae-flag"
+ ],
+ "birthday": [
+  "balloon",
+  "balloon-dark",
+  "bee",
+  "heart",
+  "star",
+  "sunflower"
+ ],
+ "love": [
+  "butterfly",
+  "butterfly-pink",
+  "heart",
+  "heart-dark",
+  "heart-red",
+  "star"
+ ],
+ "travel": [
+  "camel",
+  "heart",
+  "palm",
+  "plane",
+  "star",
+  "sun",
+  "sunglasses"
+ ]
+}

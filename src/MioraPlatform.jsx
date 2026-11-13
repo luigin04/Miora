@@ -11,6 +11,7 @@ import {
   stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf, UnsupportedBrowserError,
 } from "./pageRender";
 import { loadProjects, saveProjects, requestPersistentStorage } from "./projectStore";
+import { THEMES, LAYOUTS, pickThemeKey, framePhoto } from "./aiTheme";
 
 // ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
@@ -1530,55 +1531,30 @@ const TEMPLATE_OCCASIONS = Object.keys(TEMPLATE_BY_OCCASION);
 // Step 1: Pick a template (or blank)
 // Step 2: Upload photos (min 30 pages worth)
 // Step 3: AI scatters photos across pages with varied layouts + matching stickers
-function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject, updateProject, t, lang, isRTL, isMobile }) {
-  const [step, setStep] = useState(1);
-  const [chosenTemplate, setChosenTemplate] = useState(null);
-  const [photos, setPhotos] = useState([]);
-  const [search, setSearch] = useState("");
-  const [activeOccasion, setActiveOccasion] = useState(TEMPLATE_OCCASIONS[0]);
-  const [hovered, setHovered] = useState(null);
-
-  const occasionAr = {
-    Wedding:"زفاف", Travel:"سفر", Birthday:"عيد ميلاد",
-    "Baby Shower":"استقبال مولود", Graduation:"تخرج",
-    Family:"عائلة", Anniversary:"ذكرى سنوية", Engagement:"خطوبة",
-    Friendship:"صداقة",
-  };
-
-  const searchResults = search.trim()
-    ? TEMPLATE_LIBRARY.filter(tpl =>
-        tpl.title.toLowerCase().includes(search.toLowerCase()) ||
-        tpl.occasion.toLowerCase().includes(search.toLowerCase()))
-    : null;
-
-  // ── Photo upload handler ─────────────────────────────────────────────────
-  // Photos are re-encoded to JPEG exactly like the editor's "Add Photo" does:
-  // keeps project size manageable and makes iPhone HEIC photos display
-  // instead of silently showing up blank.
+function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lang, isRTL, isMobile }) {
+  const [stage, setStage] = useState("setup");          // setup → working → preview
+  const [photos, setPhotos] = useState([]);              // JPEG data URLs
+  const [themeKey, setThemeKey] = useState("auto");
+  const [themeText, setThemeText] = useState("");
+  const [albumTitle, setAlbumTitle] = useState("");
+  const [message, setMessage] = useState("");
   const [photoError, setPhotoError] = useState(null);
-  const handlePhotoUpload = async (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = "";
-    setPhotoError(null);
+  const [loading, setLoading] = useState(0);
+  const [work, setWork] = useState({ step: 0, text: "", pct: 0 });
+  const [result, setResult] = useState(null);           // { pages, title, themeKey }
+  const [dragOver, setDragOver] = useState(false);
+
+  const addFiles = async (fileList) => {
+    const files = Array.from(fileList || []).filter(f => /image|heic|heif/i.test(f.type || f.name));
+    setPhotoError(null); setLoading(files.length);
     let failed = 0;
     for (const file of files) {
-      try {
-        const jpeg = await compressImageFile(file, 1600, 0.85);
-        setPhotos(prev => [...prev, jpeg]);
-      } catch (err) {
-        console.error("Photo failed to load:", file.name, err);
-        failed++;
-      }
+      try { const jpeg = await compressImageFile(file, 1600, 0.85); setPhotos(prev => [...prev, jpeg]); }
+      catch (err) { console.error("Photo failed:", file.name, err); failed++; }
+      setLoading(n => n - 1);
     }
     if (failed) setPhotoError(t(`${failed} photo(s) couldn't be read and were skipped.`, `تعذر قراءة ${failed} صورة وتم تخطيها.`));
   };
-
-  // ── AI Layout Engine ─────────────────────────────────────────────────────
-  // 1) Claude (via /api/ai-plan, key stays on Netlify) describes small thumbnails in batches.
-  // 2) Claude groups them into ordered chapters (same place/event together, food together) + theme stickers.
-  // 3) We pack each chapter into pages of max 3 photos, alternating calm/busy, stickers kept off photos.
-  const [theme, setTheme] = useState("");
-  const [progress, setProgress] = useState("");
 
   const thumb = (src, max = 384) => new Promise((resolve) => {
     const img = new Image();
@@ -1587,9 +1563,9 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
       const c = document.createElement("canvas");
       c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      resolve({ data: c.toDataURL("image/jpeg", 0.7), ratio: img.width / img.height });
+      resolve(c.toDataURL("image/jpeg", 0.7));
     };
-    img.onerror = () => resolve({ data: null, ratio: 0.75 });
+    img.onerror = () => resolve(null);
     img.src = src;
   });
 
@@ -1600,327 +1576,258 @@ function AIDesignFlow({ onBack, onComplete, projects, setProjects, createProject
     return j;
   };
 
-  // Page frames on the 400×520 canvas. Each layout lists photo boxes + sticker spots that never overlap the boxes.
-  const PAGE_LAYOUTS = {
-    1: [ { boxes:[[40,40,320,410]], spots:[[8,8],[340,8],[8,460],[340,460]], titleY:458 } ],
-    2: [ { boxes:[[22,60,172,250],[206,90,172,250]], spots:[[20,8],[330,20],[20,420],[330,430]], titleY:360 },
-         { boxes:[[40,24,320,215],[40,262,320,215]], spots:[[2,236],[352,236],[8,484],[350,480]], titleY:null } ],
-    3: [ { boxes:[[18,24,178,235],[204,40,178,235],[100,290,200,200]], spots:[[14,300],[330,300],[20,440],[330,440]], titleY:null },
-         { boxes:[[18,40,214,300],[242,24,140,160],[242,196,140,160]], spots:[[250,370],[330,440],[20,360],[180,460]], titleY:400 } ],
+  // ── Page builders (pure helpers, no closures inside loops) ──
+  const txtEl = (content, x, y, w, h, font, fontSize, color, bold = false, italic = false, rotation = 0) =>
+    ({ id: generateId(), type: "text", content, x, y, w, h, font, fontSize, color, bold, italic, rotation });
+  const stickerEl = (src, x, y, size, rotation) => ({ id: generateId(), type: "sticker", src, content: "", x, y, w: size, h: size, rotation });
+  const stickerAt = (theme, n) => theme.stickers[n % theme.stickers.length];
+
+  const buildBook = async (chapters, highlight, theme, title, subtitle) => {
+    const pages = [];
+    const bgs = theme.backgrounds;
+    const heroId = Object.keys(highlight).find(id => highlight[id]) || chapters[0].ids[0];
+    const heroSrc = await framePhoto(photos[+heroId.slice(1)], 250, 290, "polaroid");
+    // back cover + front cover
+    pages.push({ id: "back-" + generateId(), background: theme.colors.soft, elements: [
+      txtEl(t("Made with love on Miora", "صُنع بحب على ميورا"), 60, 440, 280, 30, "Quicksand", 13, theme.colors.dark),
+      stickerEl(stickerAt(theme, 3), 170, 370, 60, 0) ] });
+    pages.push({ id: "front-" + generateId(), background: bgs[1 % bgs.length], elements: [
+      txtEl(title, 20, 18, 360, 70, theme.titleFont, 36, theme.colors.dark, true),
+      ...(subtitle ? [txtEl(subtitle, 40, 84, 320, 26, "Quicksand", 14, theme.colors.accent)] : []),
+      { id: generateId(), type: "image", src: heroSrc, x: 75, y: 118, w: 250, h: 290, rotation: -3 },
+      stickerEl(stickerAt(theme, 0), 14, 400, 74, -10), stickerEl(stickerAt(theme, 1), 312, 396, 74, 10),
+      stickerEl(stickerAt(theme, 2), 300, 96, 56, 12) ] });
+    if (message.trim()) {
+      pages.push({ id: generateId(), background: theme.colors.soft, elements: [
+        txtEl(message.trim(), 44, 70, 312, 330, "Dancing Script", 19, theme.colors.dark),
+        stickerEl(stickerAt(theme, 4), 18, 420, 66, -8), stickerEl(stickerAt(theme, 5), 316, 424, 62, 10) ] });
+    }
+    const PATTERN = [2, 3, 2, 1, 3, 2];
+    let pageNo = 0, stick = 6;
+    for (let c = 0; c < chapters.length; c++) {
+      const ids = chapters[c].ids;
+      let i = 0;
+      while (i < ids.length) {
+        let n = highlight[ids[i]] ? 1 : PATTERN[pageNo % PATTERN.length];
+        n = Math.min(n, 3, ids.length - i);
+        const group = ids.slice(i, i + n);
+        const isFirst = i === 0;
+        i += n;
+        const variants = LAYOUTS[n];
+        let L = variants[pageNo % variants.length];
+        if (isFirst && chapters[c].title && L.title == null) L = variants.find(v => v.title != null) || L;
+        const els = [];
+        for (let k = 0; k < group.length; k++) {
+          const [x, y, w, h, rot, frame] = L.boxes[k];
+          const src = await framePhoto(photos[+group[k].slice(1)], w, h, frame);
+          els.push({ id: generateId(), type: "image", src, x, y, w, h, rotation: rot });
+        }
+        if (isFirst && chapters[c].title && L.title != null) {
+          els.push(txtEl(chapters[c].title, 20, L.title, 360, 44, theme.titleFont, 26, theme.colors.accent, true));
+        }
+        for (let k = 0; k < L.spots.length; k++) {
+          const [x, y, size, rot] = L.spots[k];
+          els.push(stickerEl(stickerAt(theme, stick), x, y, size, rot));
+          stick += 3; // jump through the pack so neighbours differ
+        }
+        const bg = pageNo % 2 === 0 ? bgs[0] : bgs[(1 + Math.floor(pageNo / 2)) % bgs.length];
+        pages.push({ id: generateId(), background: bg, elements: els });
+        pageNo++;
+        setWork({ step: 3, text: t(`Designing page ${pageNo}…`, `نصمّم الصفحة ${pageNo}…`), pct: 60 + Math.min(38, pageNo) });
+      }
+    }
+    pages.push({ id: generateId(), background: theme.colors.soft, elements: [
+      txtEl(t("until next time…", "إلى اللقاء…"), 40, 200, 320, 60, theme.titleFont, 32, theme.colors.dark, true),
+      stickerEl(stickerAt(theme, 1), 90, 290, 80, -8), stickerEl(stickerAt(theme, 2), 230, 290, 80, 8) ] });
+    while (pages.length < MIN_ALBUM_PAGES || pages.length % 2) pages.push({ id: generateId(), background: "#ffffff", elements: [] });
+    return pages;
   };
 
-  const generateAlbum = async () => {
+  const generate = async () => {
     if (photos.length < 5) return;
-    setStep(3);
+    setStage("working");
     const ids = photos.map((_, i) => "p" + i);
-    let described = ids.map(id => ({ id }));
-    let plan = null;
+    let described = ids.map(id => ({ id })), plan = null;
     try {
-      setProgress(t("Looking at your photos…", "نتعرّف على صورك…"));
-      const thumbs = await Promise.all(photos.map(src => thumb(src)));
+      setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 });
+      const thumbs = [];
+      for (let i = 0; i < photos.length; i++) thumbs.push(await thumb(photos[i]));
       const batches = [];
       for (let i = 0; i < ids.length; i += 12) batches.push(ids.slice(i, i + 12));
-      let done = 0;
-      const results = await Promise.all(batches.map(async (b) => {
-        const out = await api({ action: "describe", images: b.map(id => ({ id, data: thumbs[+id.slice(1)].data })).filter(x => x.data) })
-          .catch(() => ({ photos: [] }));
-        done += b.length;
-        setProgress(t(`Looking at your photos… ${Math.min(done, ids.length)}/${ids.length}`, `نتعرّف على صورك… ${Math.min(done, ids.length)}/${ids.length}`));
-        return out.photos || [];
-      }));
-      const byId = Object.fromEntries(results.flat().map(p => [p.id, p]));
+      const results = [];
+      for (let b = 0; b < batches.length; b += 3) {           // 3 parallel requests at a time
+        const chunk = batches.slice(b, b + 3).map(batch => api({ action: "describe",
+          images: batch.map(id => ({ id, data: thumbs[+id.slice(1)] })).filter(x => x.data) }).catch(() => ({ photos: [] })));
+        const out = await Promise.all(chunk);
+        results.push(...out);
+        setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 + Math.round(35 * Math.min(1, (b + 3) / batches.length)) });
+      }
+      const byId = {};
+      results.forEach(r => (r.photos || []).forEach(p => { byId[p.id] = p; }));
       described = ids.map(id => ({ id, ...(byId[id] || {}) }));
-      setProgress(t("Grouping moments into chapters…", "نرتّب اللحظات في فصول…"));
-      plan = await api({ action: "plan", theme: theme || chosenTemplate?.occasion || "family memories", lang, items: described });
-    } catch (e) {
-      console.error("AI design failed, using simple order", e);
-    }
+      setWork({ step: 2, text: t("Grouping your moments into chapters…", "نرتّب لحظاتك في فصول…"), pct: 45 });
+      plan = await api({ action: "plan", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang, items: described });
+    } catch (e) { console.error("AI design failed, using simple order", e); }
 
-    // Validate plan: every photo exactly once, unknown ids dropped, missing ones appended.
-    const seen = new Set(); const chapters = [];
-    for (const ch of (plan?.chapters || [])) {
+    const seen = new Set(), chapters = [];
+    (plan?.chapters || []).forEach(ch => {
       const cids = (ch.ids || []).filter(id => ids.includes(id) && !seen.has(id));
       cids.forEach(id => seen.add(id));
       if (cids.length) chapters.push({ title: String(ch.title || "").slice(0, 40), ids: cids });
-    }
+    });
     const leftover = ids.filter(id => !seen.has(id));
     if (leftover.length) chapters.push({ title: chapters.length ? t("More favourite moments", "لحظات أخرى نحبها") : "", ids: leftover });
 
-    const occasion = chosenTemplate?.occasion || "Travel";
-    const FALLBACK = { Travel:["✈️","🗺️","📸","🌍","🧳","🌊","⭐","🌴"], Birthday:["🎂","🎉","🎈","🎁","⭐","🥳"], Wedding:["💍","🌹","💐","💕","✨","🥂"] };
-    const stickers = (plan?.stickers?.length ? plan.stickers : (FALLBACK[occasion] || FALLBACK.Travel)).slice(0, 16);
-    const [tint, accent, dark] = (plan?.palette?.length === 3 ? plan.palette : ["#fff8fe", "#c0506a", "#4A3068"]);
-    const highlight = Object.fromEntries(described.map(d => [d.id, !!d.highlight]));
-    const src = (id) => photos[+id.slice(1)];
+    const key = themeKey !== "auto" ? themeKey : pickThemeKey(themeText, plan?.themeKey);
+    const theme = THEMES[key];
+    const highlight = {};
+    described.forEach(d => { highlight[d.id] = !!d.highlight; });
+    const title = albumTitle.trim() || plan?.title || t("Our Memories", "ذكرياتنا");
+    setWork({ step: 3, text: t("Designing your pages…", "نصمّم صفحاتك…"), pct: 60 });
+    const pages = await buildBook(chapters, highlight, theme, title, plan?.subtitle || "");
+    setWork({ step: 4, text: t("Done!", "جاهز!"), pct: 100 });
+    setResult({ pages, title, themeKey: key });
+    setStage("preview");
+  };
 
-    const pages = [];
-    const coverPages = chosenTemplate?.pages?.slice(0, 2) || [
-      { id:"back-"+generateId(), background:"#ffffff", elements:[] },
-      { id:"front-"+generateId(), background: tint, elements:[
-        { id:generateId(), type:"text", content: plan?.title || chosenTemplate?.title || "My Album", x:30, y:200, w:340, h:120,
-          font:"Playfair Display", fontSize:40, color: dark, bold:true, italic:false, rotation:0 },
-        ...stickers.slice(0, 3).map((s, i) => ({ id:generateId(), type:"sticker", content:s, x:90 + i*80, y:340, w:60, h:60, rotation:(i-1)*12 })) ] },
-    ];
-    pages.push(...coverPages);
-
-    let si = 0, pageNo = 0;
-    const PATTERN = [2, 3, 2, 1, 3, 2];
-    for (const ch of chapters) {
-      let i = 0, first = true;
-      while (i < ch.ids.length) {
-        let n = highlight[ch.ids[i]] ? 1 : PATTERN[pageNo % PATTERN.length];
-        n = Math.min(n, 3, ch.ids.length - i);
-        const group = ch.ids.slice(i, i + n); i += n;
-        const variants = PAGE_LAYOUTS[n];
-        const L = variants[pageNo % variants.length];
-        const tilt = 1 + (pageNo % 3);
-        const els = [];
-        for (let k = 0; k < group.length; k++) {
-          const [x, y, w, h] = L.boxes[k];
-          els.push({ id:generateId(), type:"image", src:src(group[k]), x, y, w, h, rotation: (k % 2 ? 1 : -1) * tilt });
-        }
-        if (first && ch.title) {
-          const ty = L.titleY ?? 488;
-          els.push({ id:generateId(), type:"text", content:ch.title, x:30, y: ty, w:340, h:34,
-            font:"Dancing Script", fontSize:24, color: accent, bold:true, italic:false, rotation:0 });
-        }
-        // 2–3 stickers per page, only on the safe spots for this layout
-        const count = 2 + (pageNo % 2);
-        const spots = L.spots.slice(0, count);
-        for (let k = 0; k < spots.length; k++) {
-          const [x, y] = spots[k];
-          els.push({ id:generateId(), type:"sticker", content: stickers[si % stickers.length], x, y, w:44, h:44, rotation: (k % 2 ? 12 : -12) });
-          si++;
-        }
-        pages.push({ id:generateId(), background: pageNo % 3 === 1 ? tint : "#ffffff", elements: els });
-        first = false; pageNo++;
-      }
-    }
-    // printed as two-page spreads, minimum album length
-    while (pages.length < MIN_ALBUM_PAGES || pages.length % 2) pages.push({ id:generateId(), background:"#ffffff", elements:[] });
-
-    const pid = createProject("ai", occasion);
-    updateProject(pid, { title: plan?.title || chosenTemplate?.title || "My Album", pages });
-    await new Promise(r => setTimeout(r, 400));
+  const openInEditor = () => {
+    const pid = createProject("ai", THEMES[result.themeKey].label[0]);
+    updateProject(pid, { title: result.title, pages: result.pages });
     onComplete(pid);
   };
 
-  // ── Step 3: Generating screen ─────────────────────────────────────────────
-  if (step === 3) {
+  const shell = { minHeight: "100vh", background: `linear-gradient(160deg,${SOFT_PINK},${WARM_WHITE})`, fontFamily: "'Quicksand','Noto Sans Arabic',sans-serif", color: DARK_PURPLE };
+  const card = { background: "white", borderRadius: 22, padding: isMobile ? 18 : 26, boxShadow: "0 6px 30px rgba(74,48,104,.08)", marginBottom: 18 };
+  const label = { fontSize: 13, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: DEEP_PURPLE, marginBottom: 10 };
+  const input = { width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 12, border: `1px solid ${PASTEL_PURPLE}88`, fontFamily: "inherit", fontSize: 14, color: DARK_PURPLE, background: "#fff" };
+
+  // ── Working screen ──
+  if (stage === "working") {
+    const steps = [t("Looking at your photos", "نتعرّف على صورك"), t("Grouping moments", "نرتّب اللحظات"), t("Designing pages", "نصمّم الصفحات"), t("Finishing touches", "اللمسات الأخيرة")];
     return (
-      <div style={{ minHeight:"100vh", display:"flex", flexDirection:"column", alignItems:"center",
-        justifyContent:"center", background:`linear-gradient(160deg,${SOFT_PINK},${WARM_WHITE})`,
-        fontFamily:"'Quicksand',sans-serif", gap:24 }}>
+      <div dir={isRTL ? "rtl" : "ltr"} style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <link href={FONT_LINK} rel="stylesheet" />
-        <div style={{ width:60, height:60, borderRadius:"50%", border:`4px solid ${PASTEL_PURPLE}30`,
-          borderTop:`4px solid ${DEEP_PURPLE}`, animation:"spin 0.8s linear infinite" }} />
-        <div style={{ fontFamily:"'Playfair Display',serif", fontSize:22, color:DARK_PURPLE }}>
-          {t("Designing your album…","جاري تصميم ألبومك…")}
-        </div>
-        <div style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5, textAlign:"center", maxWidth:300 }}>
-          {progress || t("Getting started…","نبدأ…")}
-        </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-      </div>
-    );
-  }
-
-  // ── Step 2: Upload photos ─────────────────────────────────────────────────
-  if (step === 2) {
-    const minPhotos = 5;
-    const ready = photos.length >= minPhotos;
-    return (
-      <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(160deg,${SOFT_PINK}30,${WARM_WHITE})`,
-        fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
-        <link href={FONT_LINK} rel="stylesheet" />
-        <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`,
-          padding: isMobile?"14px 16px":"16px 32px", display:"flex", alignItems:"center",
-          justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
-          <button onClick={() => setStep(1)} style={backBtnStyle}>← {t("Back","عودة")}</button>
-          <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:18, color:DEEP_PURPLE, letterSpacing:2 }}>
-            {t("Add Your Photos","أضف صورك")}
+        <div style={{ ...card, width: "100%", maxWidth: 440, textAlign: "center" }}>
+          <div style={{ fontSize: 46, animation: "miofloat 1.6s ease-in-out infinite" }}>✨</div>
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: 24, margin: "10px 0 6px" }}>{t("Designing your album", "نصمّم ألبومك")}</div>
+          <div style={{ fontSize: 13, opacity: .6, marginBottom: 20 }}>{work.text}</div>
+          <div style={{ height: 8, background: `${PASTEL_PURPLE}40`, borderRadius: 8, overflow: "hidden", marginBottom: 22 }}>
+            <div style={{ width: `${work.pct}%`, height: "100%", background: `linear-gradient(90deg,${DEEP_PURPLE},#E0A3D8)`, transition: "width .5s ease" }} />
           </div>
-          <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5 }}>{t("Step 2 of 2","خطوة 2 من 2")}</div>
-        </div>
-
-        <div style={{ maxWidth:700, margin:"0 auto", padding: isMobile?"24px 16px":"40px 32px" }}>
-          <div style={{ textAlign:"center", marginBottom:32 }}>
-            {chosenTemplate?.coverImg && (
-              <img src={chosenTemplate.coverImg} alt="" style={{ height:80, borderRadius:6, marginBottom:16, boxShadow:"0 2px 12px rgba(74,48,104,0.15)" }} />
-            )}
-            <h2 style={{ fontFamily:"'Playfair Display',serif", fontSize:24, color:DARK_PURPLE, marginBottom:8 }}>
-              {t("Upload your photos","ارفع صورك")}
-            </h2>
-            <p style={{ fontSize:14, color:DARK_PURPLE, opacity:0.55, lineHeight:1.7 }}>
-              {t("Our AI will automatically arrange your photos into a beautiful album. Upload as many as you like — more photos means a richer album.",
-                 "سيقوم الذكاء الاصطناعي بترتيب صورك تلقائياً في ألبوم جميل. ارفع أكثر ما يمكن — المزيد من الصور يعني ألبوماً أكثر ثراءً.")}
-            </p>
-          </div>
-
-          {/* Upload area */}
-          <label style={{ display:"block", border:`2px dashed ${PASTEL_PURPLE}50`, borderRadius:16,
-            padding:"40px 24px", textAlign:"center", cursor:"pointer", background:"white",
-            transition:"all 0.2s ease", marginBottom:24 }}
-            onMouseEnter={e => e.currentTarget.style.borderColor=DEEP_PURPLE}
-            onMouseLeave={e => e.currentTarget.style.borderColor=`${PASTEL_PURPLE}50`}>
-            <div style={{ marginBottom:12, opacity:0.4 }}><Icon name="upload" size={48} color={DEEP_PURPLE} /></div>
-            <div style={{ fontSize:16, fontWeight:700, color:DARK_PURPLE, marginBottom:6 }}>
-              {t("Click to add photos","اضغط لإضافة صور")}
+          {steps.map((s, i) => (
+            <div key={s} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", fontSize: 14, opacity: work.step > i + 1 ? .5 : work.step === i + 1 ? 1 : .35 }}>
+              <span style={{ width: 22, height: 22, borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12,
+                background: work.step > i + 1 ? DEEP_PURPLE : work.step === i + 1 ? PASTEL_PURPLE : "#eee", color: "white" }}>{work.step > i + 1 ? "✓" : i + 1}</span>
+              {s}
             </div>
-            <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.4 }}>
-              {t("JPG, PNG supported — select multiple at once","JPG وPNG مدعومة — يمكن اختيار عدة صور دفعة واحدة")}
-            </div>
-            <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} style={{ display:"none" }} />
-          </label>
-          {photoError && (
-            <div style={{ fontSize:12, color:"#b8860b", background:"#fffaf0", border:"1px solid #f5deb3", borderRadius:10, padding:10, marginTop:-12, marginBottom:20 }}>{photoError}</div>
-          )}
-
-          {/* Photo count + preview strip */}
-          {photos.length > 0 && (
-            <div style={{ marginBottom:24 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:DARK_PURPLE, marginBottom:12 }}>
-                {photos.length} {t("photos added","صورة تمت إضافتها")}
-                <span style={{ fontSize:12, fontWeight:400, opacity:0.5, marginLeft:8 }}>
-                  → {Math.max(MIN_ALBUM_PAGES, photos.length + 4) + (Math.max(MIN_ALBUM_PAGES, photos.length + 4) % 2)} {t("pages","صفحة")}
-                </span>
-              </div>
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {photos.slice(0,12).map((src, i) => (
-                  <div key={i} style={{ width:64, height:64, borderRadius:8, overflow:"hidden",
-                    border:`2px solid ${PASTEL_PURPLE}30`, flexShrink:0 }}>
-                    <img src={src} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                  </div>
-                ))}
-                {photos.length > 12 && (
-                  <div style={{ width:64, height:64, borderRadius:8, background:`${PASTEL_PURPLE}20`,
-                    display:"flex", alignItems:"center", justifyContent:"center",
-                    fontSize:13, fontWeight:700, color:DEEP_PURPLE }}>
-                    +{photos.length - 12}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Generate button */}
-          <input value={theme} onChange={e => setTheme(e.target.value)} placeholder={t("Theme (optional) — e.g. Dubai trip, bees & polka dots, 1st birthday","الطابع (اختياري) — مثلاً رحلة دبي، عيد ميلاد أول")}
-            style={{ width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:12, border:`1px solid ${PASTEL_PURPLE}55`, marginBottom:12, fontFamily:"inherit", fontSize:14 }} />
-          <button onClick={generateAlbum} disabled={!ready}
-            style={{ width:"100%", padding:"16px", borderRadius:14, border:"none",
-              background: ready ? `linear-gradient(135deg,${DEEP_PURPLE},#7B5EA7)` : `${PASTEL_PURPLE}30`,
-              color: ready ? "white" : DARK_PURPLE, fontSize:16, fontWeight:700,
-              cursor: ready ? "pointer" : "not-allowed", fontFamily:"'Quicksand',sans-serif",
-              display:"flex", alignItems:"center", justifyContent:"center", gap:10,
-              transition:"all 0.3s ease" }}>
-            <Icon name="sparkles" size={20} color={ready?"white":DARK_PURPLE} />
-            {ready
-              ? t(`Generate My ${Math.max(30, photos.length+4)}-Page Album`, `إنشاء ألبومي بـ ${Math.max(30, photos.length+4)} صفحة`)
-              : t(`Add at least ${minPhotos} photos to continue`, `أضف ${minPhotos} صور على الأقل للمتابعة`)}
-          </button>
+          ))}
+          <style>{`@keyframes miofloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`}</style>
         </div>
       </div>
     );
   }
 
-  // ── Step 1: Choose template ─────────────────────────────────────────────
-  const visibleTemplates = searchResults || TEMPLATE_BY_OCCASION[activeOccasion] || [];
+  // ── Preview screen ──
+  if (stage === "preview" && result) {
+    const filled = result.pages.filter(p => (p.elements || []).length);
+    const scale = isMobile ? 0.36 : 0.42;
+    return (
+      <div dir={isRTL ? "rtl" : "ltr"} style={shell}>
+        <link href={FONT_LINK} rel="stylesheet" />
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: isMobile ? "20px 14px" : "32px 28px" }}>
+          <button onClick={() => setStage("setup")} style={backBtnStyle}>← {t("Change photos or theme", "تغيير الصور أو الطابع")}</button>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 14, marginBottom: 20 }}>
+            <div>
+              <div style={{ fontFamily: "'Playfair Display',serif", fontSize: isMobile ? 24 : 32 }}>{result.title}</div>
+              <div style={{ fontSize: 14, opacity: .6 }}>{t(`${filled.length} designed pages · ${photos.length} photos · ${THEMES[result.themeKey].label[0]} theme`,
+                `${filled.length} صفحة مصممة · ${photos.length} صورة · طابع ${THEMES[result.themeKey].label[1]}`)}</div>
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={generate} style={{ ...primaryBtnStyle, width: "auto", padding: "12px 20px", background: "white", color: DEEP_PURPLE, border: `1.5px solid ${DEEP_PURPLE}` }}>↻ {t("Redesign", "أعد التصميم")}</button>
+              <button onClick={openInEditor} style={{ ...primaryBtnStyle, width: "auto", padding: "12px 24px" }}>{t("Open in editor →", "افتح في المحرر ←")}</button>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+            {filled.map((pg, i) => (
+              <div key={pg.id} style={{ width: 400 * scale, height: 520 * scale, borderRadius: 6, overflow: "hidden", boxShadow: "0 4px 18px rgba(74,48,104,.15)", background: "white", position: "relative" }}>
+                <div style={{ transform: `scale(${scale})`, transformOrigin: "top left", width: 400, height: 520, pointerEvents: "none" }}><StaticPage page={pg} /></div>
+                <div style={{ position: "absolute", bottom: 4, right: 6, fontSize: 10, opacity: .45 }}>{i + 1}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // ── Setup screen ──
+  const ready = photos.length >= 5 && loading === 0;
   return (
-    <div dir={isRTL?"rtl":"ltr"} style={{ minHeight:"100vh", background:`linear-gradient(160deg,${SOFT_PINK}30,${WARM_WHITE})`,
-      fontFamily:"'Quicksand','Noto Sans Arabic',sans-serif", color:DARK_PURPLE }}>
+    <div dir={isRTL ? "rtl" : "ltr"} style={shell}>
       <link href={FONT_LINK} rel="stylesheet" />
-      <div style={{ background:"white", borderBottom:`1px solid ${PASTEL_PURPLE}20`,
-        padding: isMobile?"14px 16px":"16px 32px", display:"flex", alignItems:"center",
-        justifyContent:"space-between", position:"sticky", top:0, zIndex:50 }}>
-        <button onClick={onBack} style={backBtnStyle}>← {t("Back","عودة")}</button>
-        <div style={{ fontFamily:"'Londrina Solid',cursive", fontSize:18, color:DEEP_PURPLE, letterSpacing:2 }}>
-          {t("AI Album Design","تصميم ألبوم ذكي")}
-        </div>
-        <div style={{ fontSize:12, color:DARK_PURPLE, opacity:0.5 }}>{t("Step 1 of 2","خطوة 1 من 2")}</div>
-      </div>
-
-      <div style={{ maxWidth:900, margin:"0 auto", padding: isMobile?"24px 16px":"40px 32px" }}>
-        <div style={{ textAlign:"center", marginBottom:28 }}>
-          <h1 style={{ fontFamily:"'Playfair Display',serif", fontSize: isMobile?22:28, color:DARK_PURPLE, marginBottom:8 }}>
-            {t("Choose a Cover Template","اختر غلاف الألبوم")}
-          </h1>
-          <p style={{ fontSize:13, color:DARK_PURPLE, opacity:0.5 }}>
-            {t("Our AI will design the interior. You just pick the cover and upload your photos.",
-               "سيصمم الذكاء الاصطناعي الصفحات الداخلية. فقط اختر الغلاف وارفع صورك.")}
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "20px 14px 60px" : "32px 28px 80px" }}>
+        <button onClick={onBack} style={backBtnStyle}>← {t("Back", "عودة")}</button>
+        <div style={{ textAlign: "center", marginBottom: 26 }}>
+          <div style={{ display: "inline-block", padding: "6px 14px", borderRadius: 20, background: `${PASTEL_PURPLE}55`, fontSize: 12, fontWeight: 700, letterSpacing: 1.5, color: DEEP_PURPLE }}>✨ {t("AI POWERED DESIGN", "تصميم بالذكاء الاصطناعي")}</div>
+          <h1 style={{ fontFamily: "'Playfair Display',serif", fontSize: isMobile ? 28 : 40, margin: "14px 0 8px" }}>{t("Your photos in, a designed album out", "ارفع صورك، واحصل على ألبوم مصمَّم")}</h1>
+          <p style={{ fontSize: 15, opacity: .65, maxWidth: 560, margin: "0 auto", lineHeight: 1.7 }}>
+            {t("Our AI looks at every photo, keeps the same places and moments together, picks the layouts and decorates each page with themed stickers. You can edit everything afterwards.",
+               "يتعرّف الذكاء الاصطناعي على كل صورة، يجمع الأماكن واللحظات المتشابهة معاً، يختار التصاميم ويزيّن كل صفحة بملصقات من الطابع الذي تختاره. يمكنك تعديل كل شيء لاحقاً.")}
           </p>
         </div>
 
-        {/* Search */}
-        <div style={{ position:"relative", marginBottom:20, maxWidth:440, margin:"0 auto 20px" }}>
-          <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={t("Search… Japan, Wedding, London","ابحث… اليابان، زفاف، لندن")}
-            style={{ width:"100%", padding:"11px 16px 11px 40px", border:`1.5px solid ${PASTEL_PURPLE}40`,
-              borderRadius:12, fontSize:13, outline:"none", fontFamily:"'Quicksand',sans-serif",
-              color:DARK_PURPLE, background:"white" }} />
-          <div style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", opacity:0.35 }}>
-            <Icon name="image" size={15} color={DARK_PURPLE} />
-          </div>
-          {search && <button onClick={() => setSearch("")} style={{ position:"absolute", right:10,
-            top:"50%", transform:"translateY(-50%)", background:"none", border:"none",
-            cursor:"pointer", fontSize:14, color:DARK_PURPLE, opacity:0.4 }}>✕</button>}
+        <div style={card}>
+          <div style={label}>1 · {t("Your photos", "صورك")}</div>
+          <label onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+            style={{ display: "block", border: `2px dashed ${dragOver ? DEEP_PURPLE : PASTEL_PURPLE}`, borderRadius: 16, padding: "26px 16px", textAlign: "center", cursor: "pointer", background: dragOver ? `${PASTEL_PURPLE}22` : "transparent" }}>
+            <input type="file" accept="image/*,.heic,.heif" multiple onChange={e => { addFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
+            <div style={{ fontSize: 30 }}>📷</div>
+            <div style={{ fontWeight: 700, marginTop: 6 }}>{t("Drop photos here or tap to choose", "اسحب الصور هنا أو اضغط للاختيار")}</div>
+            <div style={{ fontSize: 12, opacity: .55, marginTop: 4 }}>{t("At least 5 photos · iPhone photos supported · more photos = more pages", "5 صور على الأقل · صور الآيفون مدعومة · صور أكثر = صفحات أكثر")}</div>
+          </label>
+          {photoError && <div style={{ color: "#c0506a", fontSize: 13, marginTop: 10 }}>{photoError}</div>}
+          {(photos.length > 0 || loading > 0) && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 13, opacity: .7, marginBottom: 8 }}>{t(`${photos.length} photos`, `${photos.length} صورة`)}{loading > 0 ? t(` · adding ${loading}…`, ` · نضيف ${loading}…`) : ""}
+                {photos.length > 0 && <button onClick={() => setPhotos([])} style={{ marginInlineStart: 10, background: "none", border: "none", color: DEEP_PURPLE, cursor: "pointer", fontSize: 12 }}>{t("Clear all", "مسح الكل")}</button>}</div>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${isMobile ? 64 : 78}px,1fr))`, gap: 6, maxHeight: 260, overflowY: "auto" }}>
+                {photos.map((p, i) => (
+                  <div key={i} style={{ position: "relative", paddingTop: "100%", borderRadius: 8, overflow: "hidden", background: "#f3eef9" }}>
+                    <img src={p} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+                    <button onClick={() => setPhotos(prev => prev.filter((_, j) => j !== i))} aria-label="remove"
+                      style={{ position: "absolute", top: 3, right: 3, width: 20, height: 20, borderRadius: 10, border: "none", background: "rgba(0,0,0,.55)", color: "white", fontSize: 12, cursor: "pointer", lineHeight: "20px", padding: 0 }}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Occasion tabs — hidden when searching */}
-        {!search && (
-          <div style={{ display:"flex", gap:8, overflowX:"auto", paddingBottom:8, marginBottom:24,
-            justifyContent: isMobile?"flex-start":"center", flexWrap: isMobile?"nowrap":"wrap" }}>
-            {TEMPLATE_OCCASIONS.map(occ => (
-              <button key={occ} onClick={() => setActiveOccasion(occ)} style={{
-                padding: isMobile?"7px 12px":"9px 18px", borderRadius:20, fontSize:12,
-                fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"'Quicksand',sans-serif",
-                border: activeOccasion===occ ? `2px solid ${DEEP_PURPLE}` : `1px solid ${PASTEL_PURPLE}40`,
-                background: activeOccasion===occ ? `${PASTEL_PURPLE}25` : "white",
-                color: activeOccasion===occ ? DEEP_PURPLE : DARK_PURPLE,
-                transition:"all 0.2s", flexShrink:0 }}>
-                {t(occ, occasionAr[occ] || occ)}
+        <div style={card}>
+          <div style={label}>2 · {t("Theme", "الطابع")}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {[["auto", ["Let AI choose", "دع الذكاء يختار"], "🪄"], ...Object.entries(THEMES).map(([k, v]) => [k, v.label, v.emoji])].map(([k, lab, em]) => (
+              <button key={k} onClick={() => setThemeKey(k)} style={{ padding: "9px 14px", borderRadius: 22, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+                border: `1.5px solid ${themeKey === k ? DEEP_PURPLE : PASTEL_PURPLE + "88"}`, background: themeKey === k ? DEEP_PURPLE : "white", color: themeKey === k ? "white" : DARK_PURPLE }}>
+                {em} {lang === "ar" ? lab[1] : lab[0]}
               </button>
             ))}
           </div>
-        )}
-
-        {/* Template grid */}
-        <div style={{ display:"flex", gap: isMobile?12:20, flexWrap:"wrap", justifyContent:"center", marginBottom:24 }}>
-          {visibleTemplates.map(tpl => (
-            <div key={tpl.id}
-              onClick={() => { setChosenTemplate(tpl); setStep(2); }}
-              style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10,
-                cursor:"pointer", transition:"transform 0.2s ease",
-                transform: hovered===tpl.id ? "translateY(-4px)" : "none" }}
-              onMouseEnter={() => setHovered(tpl.id)}
-              onMouseLeave={() => setHovered(null)}>
-              <img src={tpl.coverImg || "/books/miora-cover.jpg"} alt={tpl.title}
-                style={{ height: isMobile?120:150, width:"auto", borderRadius:6,
-                  boxShadow: hovered===tpl.id
-                    ? `0 8px 24px rgba(74,48,104,0.25), 0 0 0 3px ${DEEP_PURPLE}`
-                    : "0 3px 12px rgba(74,48,104,0.12)",
-                  transition:"all 0.2s ease" }} />
-              <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE, textAlign:"center" }}>{tpl.title}</div>
-              <div style={{ fontSize:10, color:DARK_PURPLE, opacity:0.4 }}>{tpl.desc}</div>
-            </div>
-          ))}
-
-          {/* Blank canvas option */}
-          <div onClick={() => { setChosenTemplate(null); setStep(2); }}
-            style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:10, cursor:"pointer" }}
-            onMouseEnter={() => setHovered("blank")}
-            onMouseLeave={() => setHovered(null)}>
-            <div style={{ height: isMobile?120:150, width: isMobile?85:106, borderRadius:6,
-              border:`2px dashed ${PASTEL_PURPLE}50`, background:"white",
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:8,
-              boxShadow: hovered==="blank" ? `0 8px 24px rgba(74,48,104,0.2), 0 0 0 3px ${DEEP_PURPLE}` : "0 3px 12px rgba(74,48,104,0.08)",
-              transition:"all 0.2s" }}>
-              <span style={{ fontSize:24, color:PASTEL_PURPLE }}>+</span>
-              <span style={{ fontSize:9, color:DARK_PURPLE, opacity:0.4, textAlign:"center" }}>{t("No cover","بدون غلاف")}</span>
-            </div>
-            <div style={{ fontSize:11, fontWeight:700, color:DARK_PURPLE }}>{t("Blank","فارغ")}</div>
-          </div>
+          <input value={themeText} onChange={e => setThemeText(e.target.value)} style={input}
+            placeholder={t("Tell us about it (optional): e.g. Fatima's 1st birthday, our 10 days in Baghdad…", "أخبرنا عنه (اختياري): مثلاً عيد ميلاد فاطمة الأول، رحلتنا إلى بغداد…")} />
         </div>
+
+        <div style={card}>
+          <div style={label}>3 · {t("Personal touch (optional)", "لمسة شخصية (اختياري)")}</div>
+          <input value={albumTitle} onChange={e => setAlbumTitle(e.target.value)} style={{ ...input, marginBottom: 10 }} placeholder={t("Album title, e.g. Our Dubai Diaries", "عنوان الألبوم، مثلاً يوميات دبي")} />
+          <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} style={{ ...input, resize: "vertical" }}
+            placeholder={t("A message for the first page, e.g. a letter to the person you're gifting this to", "رسالة للصفحة الأولى، مثلاً رسالة لمن ستهديه الألبوم")} />
+        </div>
+
+        <button onClick={generate} disabled={!ready} style={{ ...primaryBtnStyle, padding: 18, fontSize: 17, opacity: ready ? 1 : .45, cursor: ready ? "pointer" : "not-allowed" }}>
+          ✨ {ready ? t(`Design my album (${photos.length} photos)`, `صمّم ألبومي (${photos.length} صورة)`) : t("Add at least 5 photos", "أضف 5 صور على الأقل")}
+        </button>
       </div>
     </div>
   );
