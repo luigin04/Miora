@@ -124,3 +124,25 @@ export function framePhoto(src, w, h, frame) {
     img.src = src;
   });
 }
+
+// Sticker names per pack (what Claude chooses from) → URL
+export const stickerName = (url) => url.split("/").pop().replace(/\.(svg|png)$/, "").replace(/^sticker-/, "");
+export const PACKS_FOR_AI = Object.fromEntries(Object.entries(THEMES).map(([k, v]) => [k, {
+  label: v.label[0], stickers: v.stickers.map(stickerName), backgrounds: v.backgrounds.length }]));
+
+// Layout catalogue described for Claude. Key = <photos><variant>.
+export const LAYOUT_CATALOGUE = {
+  "1a": "1 photo, large tilted polaroid; has title slot at bottom",
+  "1b": "1 photo, large white frame; has title slot at bottom",
+  "2a": "2 portrait polaroids side by side; has title slot",
+  "2b": "2 landscape photos stacked; no title slot",
+  "2c": "1 big portrait + 1 overlapping polaroid; no title slot",
+  "3a": "3 polaroids: two on top, one below; no title slot",
+  "3b": "1 big portrait left + 2 small right; has title slot",
+  "3c": "3 cascading polaroids; no title slot",
+};
+export const layoutFor = (key) => {
+  const n = +String(key || "")[0];
+  const v = "abc".indexOf(String(key || "")[1]);
+  return LAYOUTS[n] ? LAYOUTS[n][Math.max(0, v) % LAYOUTS[n].length] : null;
+};

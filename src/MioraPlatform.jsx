@@ -11,7 +11,7 @@ import {
   stickerImageStyle, textStyle, textEditorStyle, exportPagesToPdf, UnsupportedBrowserError,
 } from "./pageRender";
 import { loadProjects, saveProjects, requestPersistentStorage } from "./projectStore";
-import { THEMES, LAYOUTS, pickThemeKey, framePhoto } from "./aiTheme";
+import { THEMES, LAYOUTS, pickThemeKey, framePhoto, stickerName, PACKS_FOR_AI, LAYOUT_CATALOGUE, layoutFor } from "./aiTheme";
 
 // ─── EmailJS Config (instant heads-up notifications to Layal) ───────────────
 const EMAILJS_SERVICE_ID  = "service_c3r6j0e";
@@ -1564,17 +1564,35 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
       const c = document.createElement("canvas");
       c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-      resolve(c.toDataURL("image/jpeg", 0.7));
+      resolve({ data: c.toDataURL("image/jpeg", 0.7), ratio: +(img.width / img.height).toFixed(2) });
     };
     img.onerror = () => resolve(null);
     img.src = src;
   });
 
-  const api = async (payload) => {
-    const r = await fetch("/.netlify/functions/ai-plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || `AI request failed (${r.status})`);
-    return j;
+  // Calls the streaming edge function and returns the parsed JSON Claude wrote.
+  const api = async (payload, onChars) => {
+    const r = await fetch("/api/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `AI request failed (${r.status})`); }
+    const reader = r.body.getReader(); const dec = new TextDecoder();
+    let buf = "", text = "", err = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+        if (ev.type === "content_block_delta" && ev.delta && ev.delta.text) text += ev.delta.text;
+        if (ev.type === "error") err = (ev.error && ev.error.message) || "stream error";
+      }
+      if (onChars) onChars(text.length);
+    }
+    if (err) throw new Error(err);
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error("AI returned no design");
+    return JSON.parse(m[0]);
   };
 
   // ── Page builders (pure helpers, no closures inside loops) ──
@@ -1583,12 +1601,13 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
   const stickerEl = (src, x, y, size, rotation) => ({ id: generateId(), type: "sticker", src, content: "", x, y, w: size, h: size, rotation });
   const stickerAt = (theme, n) => theme.stickers[n % theme.stickers.length];
 
-  const buildBook = async (chapters, highlight, theme, title, subtitle) => {
+  // Turn the designed page list into editor pages (frames baked in, stickers by name).
+  const buildBook = async (design, theme, title, subtitle, heroId) => {
     const pages = [];
     const bgs = theme.backgrounds;
-    const heroId = Object.keys(highlight).find(id => highlight[id]) || chapters[0].ids[0];
+    const byName = {};
+    theme.stickers.forEach(u => { byName[stickerName(u)] = u; });
     const heroSrc = await framePhoto(photos[+heroId.slice(1)], 250, 290, "polaroid");
-    // back cover + front cover
     pages.push({ id: "back-" + generateId(), background: theme.colors.soft, elements: [
       txtEl(t("Made with love on Miora", "صُنع بحب على ميورا"), 60, 440, 280, 30, "Quicksand", 13, theme.colors.dark),
       stickerEl(stickerAt(theme, 3), 170, 370, 60, 0) ] });
@@ -1603,39 +1622,30 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
         txtEl(message.trim(), 44, 70, 312, 330, "Dancing Script", 19, theme.colors.dark),
         stickerEl(stickerAt(theme, 4), 18, 420, 66, -8), stickerEl(stickerAt(theme, 5), 316, 424, 62, 10) ] });
     }
-    const PATTERN = [2, 3, 2, 1, 3, 2];
-    let pageNo = 0, stick = 6;
-    for (let c = 0; c < chapters.length; c++) {
-      const ids = chapters[c].ids;
-      let i = 0;
-      while (i < ids.length) {
-        let n = highlight[ids[i]] ? 1 : PATTERN[pageNo % PATTERN.length];
-        n = Math.min(n, 3, ids.length - i);
-        const group = ids.slice(i, i + n);
-        const isFirst = i === 0;
-        i += n;
-        const variants = LAYOUTS[n];
-        let L = variants[pageNo % variants.length];
-        if (isFirst && chapters[c].title && L.title == null) L = variants.find(v => v.title != null) || L;
-        const els = [];
-        for (let k = 0; k < group.length; k++) {
-          const [x, y, w, h, rot, frame] = L.boxes[k];
-          const src = await framePhoto(photos[+group[k].slice(1)], w, h, frame);
-          els.push({ id: generateId(), type: "image", src, x, y, w, h, rotation: rot });
-        }
-        if (isFirst && chapters[c].title && L.title != null) {
-          els.push(txtEl(chapters[c].title, 20, L.title, 360, 44, theme.titleFont, 26, theme.colors.accent, true));
-        }
-        for (let k = 0; k < L.spots.length; k++) {
-          const [x, y, size, rot] = L.spots[k];
-          els.push(stickerEl(stickerAt(theme, stick), x, y, size, rot));
-          stick += 3; // jump through the pack so neighbours differ
-        }
-        const bg = pageNo % 2 === 0 ? bgs[0] : bgs[(1 + Math.floor(pageNo / 2)) % bgs.length];
-        pages.push({ id: generateId(), background: bg, elements: els });
-        pageNo++;
-        setWork({ step: 3, text: t(`Designing page ${pageNo}…`, `نصمّم الصفحة ${pageNo}…`), pct: 60 + Math.min(38, pageNo) });
+    let stick = 6;
+    for (let pi = 0; pi < design.length; pi++) {
+      const d = design[pi];
+      const L = layoutFor(d.layout) || LAYOUTS[d.ids.length][0];
+      const els = [];
+      for (let k = 0; k < d.ids.length; k++) {
+        const [x, y, w, h, rot, frame] = L.boxes[k];
+        const src = await framePhoto(photos[+d.ids[k].slice(1)], w, h, frame);
+        els.push({ id: generateId(), type: "image", src, x, y, w, h, rotation: rot });
       }
+      if (d.title) {
+        const ty = L.title != null ? L.title : null;
+        if (ty != null) els.push(txtEl(d.title, 20, ty, 360, 44, theme.titleFont, 26, theme.colors.accent, true));
+      }
+      const wanted = (d.stickers || []).map(n => byName[n]).filter(Boolean);
+      for (let k = 0; k < L.spots.length && k < Math.max(2, wanted.length); k++) {
+        const [x, y, size, rot] = L.spots[k];
+        const src = wanted[k] || stickerAt(theme, stick);
+        if (!wanted[k]) stick += 3;
+        els.push(stickerEl(src, x, y, size, rot));
+      }
+      const bi = Number.isInteger(d.background) ? d.background : 0;
+      pages.push({ id: generateId(), background: bgs[Math.abs(bi) % bgs.length], elements: els });
+      setWork({ step: 3, text: t(`Designing page ${pi + 1} of ${design.length}…`, `نصمّم الصفحة ${pi + 1} من ${design.length}…`), pct: 70 + Math.round(28 * (pi + 1) / design.length) });
     }
     pages.push({ id: generateId(), background: theme.colors.soft, elements: [
       txtEl(t("until next time…", "إلى اللقاء…"), 40, 200, 320, 60, theme.titleFont, 32, theme.colors.dark, true),
@@ -1644,51 +1654,73 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
     return pages;
   };
 
+  // Simple packing used only for photos the AI didn't place (or if the AI is unreachable).
+  const autoPages = (ids, highlight) => {
+    const out = []; const PATTERN = [2, 3, 2, 1, 3, 2]; let i = 0, n0 = 0;
+    while (i < ids.length) {
+      let n = highlight[ids[i]] ? 1 : PATTERN[n0 % PATTERN.length];
+      n = Math.min(n, ids.length - i);
+      out.push({ layout: `${n}${"abc"[n0 % (n === 1 ? 2 : 3)]}`, ids: ids.slice(i, i + n), stickers: [], background: n0 % 3 === 1 ? 1 : 0 });
+      i += n; n0++;
+    }
+    return out;
+  };
+
   const generate = async () => {
     if (photos.length < 5) return;
-    setStage("working");
+    setStage("working"); setAiIssue("");
     const ids = photos.map((_, i) => "p" + i);
     let described = ids.map(id => ({ id })), plan = null;
-    setAiIssue("");
     try {
-      setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 });
+      setWork({ step: 1, text: t("Claude is looking at your photos…", "Claude يتعرّف على صورك…"), pct: 3 });
       const thumbs = [];
       for (let i = 0; i < photos.length; i++) thumbs.push(await thumb(photos[i]));
       const batches = [];
       for (let i = 0; i < ids.length; i += 12) batches.push(ids.slice(i, i + 12));
       const results = [];
-      for (let b = 0; b < batches.length; b += 3) {           // 3 parallel requests at a time
+      for (let b = 0; b < batches.length; b += 3) {
         const chunk = batches.slice(b, b + 3).map(batch => api({ action: "describe",
-          images: batch.map(id => ({ id, data: thumbs[+id.slice(1)] })).filter(x => x.data) }).catch(err => ({ photos: [], err: String(err.message || err) })));
-        const out = await Promise.all(chunk);
-        results.push(...out);
-        setWork({ step: 1, text: t("Looking at your photos…", "نتعرّف على صورك…"), pct: 5 + Math.round(35 * Math.min(1, (b + 3) / batches.length)) });
+          images: batch.map(id => thumbs[+id.slice(1)]).map((th, k) => ({ id: batch[k], data: th && th.data, ratio: th && th.ratio })).filter(x => x.data) })
+          .catch(err => ({ photos: [], err: String(err.message || err) })));
+        results.push(...await Promise.all(chunk));
+        setWork({ step: 1, text: t(`Claude is looking at your photos… ${Math.min(ids.length, (b + 3) * 12)}/${ids.length}`, `Claude يتعرّف على صورك… ${Math.min(ids.length, (b + 3) * 12)}/${ids.length}`),
+          pct: 3 + Math.round(37 * Math.min(1, (b + 3) / batches.length)) });
       }
-      const firstErr = results.find(r => r.err);
-      if (firstErr && results.every(r => r.err)) throw new Error(firstErr.err);
+      if (results.length && results.every(r => r.err)) throw new Error(results[0].err);
       const byId = {};
       results.forEach(r => (r.photos || []).forEach(p => { byId[p.id] = p; }));
-      described = ids.map(id => ({ id, ...(byId[id] || {}) }));
-      setWork({ step: 2, text: t("Grouping your moments into chapters…", "نرتّب لحظاتك في فصول…"), pct: 45 });
-      plan = await api({ action: "plan", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang, items: described });
-    } catch (e) { console.error("AI design failed, using simple order", e); setAiIssue(String(e.message || e)); }
+      described = ids.map((id, i) => ({ id, ratio: thumbs[i] ? thumbs[i].ratio : 0.75, ...(byId[id] || {}) }));
+      setWork({ step: 2, text: t("Claude is designing your album page by page… (this can take a minute or two)", "Claude يصمّم ألبومك صفحة بصفحة… (قد يستغرق دقيقة أو اثنتين)"), pct: 42 });
+      plan = await api({ action: "plan", theme: themeText, themeKey, themeKeys: Object.keys(THEMES), lang,
+        packs: themeKey !== "auto" ? { [themeKey]: PACKS_FOR_AI[themeKey] } : PACKS_FOR_AI, layouts: LAYOUT_CATALOGUE, items: described },
+        (n) => setWork({ step: 2, text: t(`Claude is designing your album… (${Math.round(n / 1000)}k characters written)`, `Claude يصمّم ألبومك… (${Math.round(n / 1000)}k حرف)`), pct: Math.min(68, 42 + Math.round(n / 400)) }));
+    } catch (e) { console.error("AI design failed", e); setAiIssue(String(e.message || e)); }
 
-    const seen = new Set(), chapters = [];
-    (plan?.chapters || []).forEach(ch => {
-      const cids = (ch.ids || []).filter(id => ids.includes(id) && !seen.has(id));
-      cids.forEach(id => seen.add(id));
-      if (cids.length) chapters.push({ title: String(ch.title || "").slice(0, 40), ids: cids });
+    const highlight = {};
+    described.forEach(d => { highlight[d.id] = !!d.highlight; });
+    // Validate Claude's pages: known ids only, each once, max 3 per page, layout must match photo count.
+    const seen = new Set(), design = [];
+    (plan?.pages || []).forEach(pg => {
+      const pids = (pg.ids || []).filter(id => ids.includes(id) && !seen.has(id)).slice(0, 3);
+      if (!pids.length) return;
+      pids.forEach(id => seen.add(id));
+      const lay = String(pg.layout || "");
+      const layout = +lay[0] === pids.length && layoutFor(lay) ? lay : `${pids.length}a`;
+      design.push({ layout, ids: pids, title: String(pg.title || "").slice(0, 40), stickers: Array.isArray(pg.stickers) ? pg.stickers : [], background: pg.background });
     });
     const leftover = ids.filter(id => !seen.has(id));
-    if (leftover.length) chapters.push({ title: chapters.length ? t("More favourite moments", "لحظات أخرى نحبها") : "", ids: leftover });
+    if (leftover.length) {
+      const extra = autoPages(leftover, highlight);
+      if (design.length) extra[0].title = t("More favourite moments", "لحظات أخرى نحبها");
+      design.push(...extra);
+    }
 
     const key = themeKey !== "auto" ? themeKey : pickThemeKey(themeText, plan?.themeKey);
     const theme = THEMES[key];
-    const highlight = {};
-    described.forEach(d => { highlight[d.id] = !!d.highlight; });
     const title = albumTitle.trim() || plan?.title || t("Our Memories", "ذكرياتنا");
-    setWork({ step: 3, text: t("Designing your pages…", "نصمّم صفحاتك…"), pct: 60 });
-    const pages = await buildBook(chapters, highlight, theme, title, plan?.subtitle || "");
+    const heroId = Object.keys(highlight).find(id => highlight[id]) || ids[0];
+    setWork({ step: 3, text: t("Building your pages…", "نبني صفحاتك…"), pct: 70 });
+    const pages = await buildBook(design, theme, title, plan?.subtitle || "", heroId);
     setWork({ step: 4, text: t("Done!", "جاهز!"), pct: 100 });
     setResult({ pages, title, themeKey: key });
     setStage("preview");
