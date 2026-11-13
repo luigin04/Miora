@@ -3,7 +3,7 @@
 // action "plan": groups all described photos into ordered chapters with titles + theme stickers.
 const API = "https://api.anthropic.com/v1/messages";
 const MODEL = (process.env.MIORA_AI_MODEL || "claude-haiku-5-5").trim();
-const KEY = (process.env.ANTHROPIC_API_KEY || "").trim().replace(/^["']|["']$/g, "");
+const KEY = (process.env.MIORA_NETLIFY_AI || process.env.ANTHROPIC_API_KEY || "").trim().replace(/^["']|["']$/g, "");
 
 const DESCRIBE_PROMPT = `You help design printed photo albums. For each photo, return JSON only:
 {"photos":[{"id":"<id>","desc":"<max 14 words: who/what, activity>","place":"<short place or scene label, e.g. 'airport', 'beach', 'birthday cake table', 'restaurant'>","food":true|false,"highlight":true|false}]}
@@ -37,7 +37,7 @@ const json = (status, body) => new Response(JSON.stringify(body), { status, head
 
 export default async (req) => {
   if (req.method !== "POST") return json(405, { error: "POST only" });
-  if (!KEY) return json(500, { error: "ANTHROPIC_API_KEY not set" });
+  if (!KEY) return json(500, { error: "No API key set (MIORA_NETLIFY_AI)" });
   let body;
   try { body = await req.json(); } catch { return json(400, { error: "bad json" }); }
   try {
