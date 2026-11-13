@@ -1601,6 +1601,17 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
   const stickerEl = (src, x, y, size, rotation) => ({ id: generateId(), type: "sticker", src, content: "", x, y, w: size, h: size, rotation });
   const stickerAt = (theme, n) => theme.stickers[n % theme.stickers.length];
 
+  // Strip anything active from model-drawn SVG before it becomes a sticker.
+  const safeSVG = (raw) => {
+    let svg = String(raw || "").trim();
+    if (!/^<svg[\s>]/i.test(svg) || svg.length > 20000) return null;
+    svg = svg.replace(/<\s*(script|foreignObject|iframe|image|use|a)\b[\s\S]*?(<\/\s*\1\s*>|\/>)/gi, "")
+             .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*')/gi, "")
+             .replace(/(href|xlink:href)\s*=\s*("[^"]*"|'[^']*')/gi, "");
+    if (!/xmlns=/.test(svg)) svg = svg.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    return svg;
+  };
+
   // ── Render one designed page (Claude's free-form layout) into editor elements ──
   const clampN = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
   const renderPage = async (pd, theme, byName, used) => {
@@ -1737,6 +1748,21 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
     const themeBrief = { name: theme.label[0], colors: theme.colors, titleFont: theme.titleFont,
       backgrounds: theme.backgrounds.map((b, i) => i === 0 ? "0: plain/calm" : `${i}: ${b.includes("radial") ? "polka dots" : b.includes("linear") ? "grid/lines" : "solid colour"}`),
       themeStickers: theme.stickers.map(stickerName), extraStickers: all.slice(theme.stickers.length).map(stickerName) };
+    // 2b — Claude draws custom stickers for this album
+    try {
+      setWork({ step: 2, text: t("Claude is drawing custom stickers for your album…", "Claude يرسم ملصقات خاصة لألبومك…"), pct: 28 });
+      const album = { title: albumTitle.trim() || outline?.title || "", customerTheme: themeText, themeName: theme.label[0],
+        chapters: (outline?.chapters || []).map(ch => ch.title), places: [...new Set(described.map(d => d.place).filter(Boolean))].slice(0, 30),
+        moments: described.filter(d => d.highlight || d.food).map(d => d.desc).slice(0, 25) };
+      const res = await api({ action: "stickers", theme: { colors: theme.colors, name: theme.label[0] }, album });
+      const custom = [];
+      (res.stickers || []).slice(0, 8).forEach(st => {
+        const svg = safeSVG(st.svg);
+        const name = String(st.name || "").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 40);
+        if (svg && name && !byName[name]) { byName[name] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); custom.push(name); }
+      });
+      themeBrief.customStickers = custom;
+    } catch (e) { console.error("custom stickers failed", e); }
     const chunks = [];
     for (let i = 0; i < briefs.length; i += 5) chunks.push(briefs.slice(i, i + 5));
     const designed = {}, recently = [];
@@ -1810,7 +1836,7 @@ function AIDesignFlow({ onBack, onComplete, createProject, updateProject, t, lan
 
   // ── Working screen ──
   if (stage === "working") {
-    const steps = [t("Studying your photos", "دراسة صورك"), t("Planning the story", "تخطيط القصة"), t("Designing every page", "تصميم كل صفحة"), t("Framing & finishing", "التأطير واللمسات الأخيرة")];
+    const steps = [t("Studying your photos", "دراسة صورك"), t("Planning the story & drawing stickers", "تخطيط القصة ورسم الملصقات"), t("Designing every page", "تصميم كل صفحة"), t("Framing & finishing", "التأطير واللمسات الأخيرة")];
     return (
       <div dir={isRTL ? "rtl" : "ltr"} style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <link href={FONT_LINK} rel="stylesheet" />

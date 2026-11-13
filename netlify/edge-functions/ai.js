@@ -47,7 +47,8 @@ ELEMENTS you can place (JSON objects in "elements"):
 DESIGN RULES (this is what makes Miora books great):
 1. NEVER cover faces. You are told where faces are in each photo; stickers/tape/text may overlap a photo only at its corners or outer edge.
    Put most stickers in the margins and empty areas between photos.
-2. Stickers: 3–6 per page (fewer on hero/full-bleed pages). Make them RELEVANT to what's in the photos (food → food stickers, landmark → that
+2. Stickers: "customStickers" were drawn specially for THIS album — use each of them at least once, on the most fitting pages
+   (e.g. the name sticker on the cover-like opener, the food sticker on food pages). 3–6 stickers per page (fewer on hero/full-bleed pages). Make them RELEVANT to what's in the photos (food → food stickers, landmark → that
    landmark, baby/birthday → balloons/hearts, flowers → florals/butterflies). Cluster small ones (sparkles, hearts) in a corner instead of spreading
    them evenly. Use different stickers on every page — never reuse a sticker that appears in "recentlyUsed", and vary sizes (one big, some small).
 3. Every page has a point of view: a title or a short caption/tag/pill that fits the moment (funny, warm, specific). Chapter-opening pages get the
@@ -70,6 +71,16 @@ EXAMPLE of one good page (2 photos, chapter opener):
  {"t":"sticker","name":"sparkle-gold","x":250,"y":440,"size":30,"rot":0},{"t":"sticker","name":"sparkle-white","x":270,"y":470,"size":18,"rot":0}]}
 
 Think about each page before writing. Return JSON only: {"pages":[{"pageNo":..,"background":..,"elements":[...]}]} — one entry per requested page, same pageNo values.`;
+
+const STICKERS = `You are an illustrator making custom die-cut stickers for one specific printed photo album.
+From the album summary, invent 6 stickers that are SPECIFIC to this album (the places, food, objects, occasion, the person's name or age,
+a date stamp) — things a generic sticker pack would not have. Mix: 3–4 illustrated objects/landmarks, 1 name/word sticker, 1 badge/stamp.
+Style (match a premium scrapbook look): flat vector, bold friendly shapes, 2.5–4px dark outlines (#1F1B16), the album's palette plus 1–2
+accents, a thick WHITE die-cut border around the whole silhouette (draw the silhouette first with stroke="#fff" stroke-width="14"
+stroke-linejoin="round"), and a soft shadow (same silhouette, fill/stroke rgba(0,0,0,.15), offset 3px down-right) underneath. Small
+highlight shines are nice. Keep each SVG under 4 KB, viewBox="0 0 200 200", width="300" height="300", no <script>, no <foreignObject>,
+no external images or links, no filters. Text only if short (max 14 chars), font-family="Arial, sans-serif", font-weight="900".
+Return JSON only: {"stickers":[{"name":"<kebab-case, e.g. fatima-cake>","about":"<what it shows>","svg":"<svg ...>...</svg>"}]}`;
 
 const env = (n) => (globalThis.Netlify && Netlify.env.get(n)) || "";
 const clean = (v) => String(v || "").trim().replace(/^["']|["']$/g, "");
@@ -110,6 +121,9 @@ export default async (req) => {
     system = DESIGN; max_tokens = 24000; thinking = 8000;
     content = [{ type: "text", text: JSON.stringify({ theme: body.theme || {}, recentlyUsed: body.recentlyUsed || [],
       language: body.lang === "ar" ? "Arabic text" : "English text", pages: body.pages || [] }).slice(0, 200000) }];
+  } else if (body.action === "stickers") {
+    system = STICKERS; max_tokens = 24000; thinking = 4000;
+    content = [{ type: "text", text: JSON.stringify({ theme: body.theme || {}, album: body.album || {} }).slice(0, 60000) }];
   } else return Response.json({ error: "unknown action" }, { status: 400 });
 
   let r = await callClaude(KEY, MODEL, system, content, max_tokens, thinking);
